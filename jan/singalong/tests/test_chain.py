@@ -198,3 +198,27 @@ def test_c_kernel_matches_python(dataset, tmp_path):
     T = min(len(C), len(P))
     assert (C[:T, 0] == v[:T]).mean() > 0.99
     assert np.abs(C[:T, 2:] - P[:T]).max() <= 1
+
+
+def test_wav_sink_mix_and_stereo(tmp_path):
+    """WavSink renders notes + a singer of arbitrary length to mono and stereo files (no synth needed)."""
+    import wave
+    from singalong import renderer as rd
+    sr = 16000
+    rng = np.random.default_rng(0)
+    voice = np.zeros(int(3.3 * sr) + 175)                       # odd length: not a multiple of the 20 ms hop
+    voice[sr:2 * sr] = 0.3 * np.sin(2 * np.pi * 220 * np.arange(sr) / sr) + 0.01 * rng.standard_normal(sr)
+    voice[int(2.5 * sr)] = 1.0                                  # a click must not set the level
+    for stereo in (False, True):
+        sink = rd.WavSink(tmp_path / f"out_{stereo}.wav", sr=sr)
+        sink.set_time(0.0); sink.note_on(0, 60, 90); sink.control(0, 11, 100)
+        sink.set_time(2.0); sink.note_off(0, 60)
+        path = sink.close(voice=voice, stereo=stereo)
+        with wave.open(str(path)) as w:
+            assert w.getnchannels() == (2 if stereo else 1)
+            y = np.frombuffer(w.readframes(w.getnframes()), "<i2").reshape(-1, w.getnchannels()) / 32767
+        assert len(y) >= len(voice)
+        vio = y[:, -1] if stereo else y[:, 0]
+        assert np.abs(vio[: int(0.9 * sr)]).max() < 0.02            # violin silent before the singer starts
+        assert np.sqrt(np.mean(y[sr:2 * sr] ** 2)) > 0.05             # audible while singing
+

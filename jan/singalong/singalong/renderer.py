@@ -278,7 +278,9 @@ class WavSink:
                 g = min(1.0, g + 0.4) if on else max(0.0, g - 1 / 75)
                 gate[i] = g
             vio = vio * np.interp(np.arange(N), np.arange(nb) * hop + hop // 2, gate)
-            on_rms = np.sqrt(np.mean(vio[np.repeat(singing, hop)[:N]] ** 2)) if singing.any() else 0.0
+            mask = np.zeros(N, bool)
+            mask[:nb * hop] = np.repeat(singing, hop)                          # N is not a multiple of hop
+            on_rms = np.sqrt(np.mean(vio[mask] ** 2)) if mask.any() else 0.0
             vio = vio / (on_rms + 1e-9) * 0.12 * 10 ** (violin_db / 20)          # violin ~4 dB under the singer
         else:
             vio = vio / (np.abs(vio).max() + 1e-9) * 0.5
