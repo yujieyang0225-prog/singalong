@@ -8,6 +8,7 @@ NeuroTUM Hackathon 2026, Innatera × Sofilab challenge. **Goal:** you sing any s
 MNH26SVR/
 ├── README.md          ← you are here
 ├── scripts/           ← helper scripts (paper downloader, …); code goes in the repo root
+├── jan/               ← Jan's code: scripts/ (analysis & experiments), prep/ (data prep)
 └── Hackathon/         ← the team Obsidian vault (all notes, decisions, research, songs)
 ```
 

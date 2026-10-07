@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# local Python deps (unpacked wheels, see scripts/README)
+.pydeps/
+
+# analysis caches
+.cache/
+
+# downloaded datasets (licences: see 09 Decisions/D10)
+data/
