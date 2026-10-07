@@ -201,9 +201,10 @@ class DualLoss(nn.Module):
         m = Y[..., MASK_CH] > 0
         parts = {}
         n_chord = min(12, s_out.shape[-1])
-        if self.w_chord and n_chord:
-            r = rate[..., :12][m] * (1 - 2e-3) + 1e-3          # affine, not clamp: silent neurons keep a gradient
-            parts["chord"] = self.w_chord * F.binary_cross_entropy(r, Y[..., :12][m])
+        mc = m & (Y[..., :12].sum(-1) > 0)                     # all-zero chord row = chord unknown (pseudo-labelled real audio)
+        if self.w_chord and n_chord and mc.any():
+            r = rate[..., :12][mc] * (1 - 2e-3) + 1e-3         # affine, not clamp: silent neurons keep a gradient
+            parts["chord"] = self.w_chord * F.binary_cross_entropy(r, Y[..., :12][mc])
         if self.w_pitch and s_out.shape[-1] >= 24:
             logits = self.alpha * rate[..., 12:24][m]
             # 13th logit for 'no note': high when all 12 melody outputs are quiet

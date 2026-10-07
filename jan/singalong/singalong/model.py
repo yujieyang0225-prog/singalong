@@ -70,9 +70,10 @@ class DualRateLoss(torch.nn.MSELoss):
         rate = spike_rate(spikes)
         m = y[..., 12] > 0
         loss = 0.0
-        if self.w_chord:
-            r = rate[..., :12][m] * (1 - 2e-3) + 1e-3
-            loss = loss + self.w_chord * F.binary_cross_entropy(r, y[..., :12][m])
+        mc = m & (y[..., :12].sum(-1) > 0)                     # all-zero chord row = chord unknown (pseudo-labelled audio)
+        if self.w_chord and mc.any():
+            r = rate[..., :12][mc] * (1 - 2e-3) + 1e-3
+            loss = loss + self.w_chord * F.binary_cross_entropy(r, y[..., :12][mc])
         if self.w_pitch and spikes.shape[-1] >= 24 and y.shape[-1] >= 14:
             mel = rate[..., 12:24][m]
             logits = torch.cat([self.alpha * mel, self.alpha * (0.5 - mel.max(-1, keepdim=True).values)], -1)

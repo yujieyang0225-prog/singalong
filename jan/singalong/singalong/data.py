@@ -99,6 +99,7 @@ def baseline(train_recs, Y_val):
     """Best constant output (most common chord pitch-class set in train), scored on val crops."""
     from .metrics import scores
     tr = np.concatenate([r["Y"][r["M"]] for r in train_recs])
+    tr = tr[tr.sum(1) > 0]                                            # ignore 'chord unknown' rows (pseudo-labelled audio)
     sets, counts = np.unique(tr, axis=0, return_counts=True)
     best = torch.tensor(sets[counts.argmax()]).float()
     s = scores(best.expand(*Y_val.shape[:2], 12).clone(), Y_val)
