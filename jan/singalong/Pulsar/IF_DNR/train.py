@@ -30,8 +30,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--hidden", type=int, default=64)
+    ap.add_argument("--out", type=int, default=24, help="12 = chord head only (runs 0-2), 24 = chord + melody heads")
+    ap.add_argument("--loss", choices=["bce", "dual"], default="dual")
+    ap.add_argument("--data", action="append", help="dataset folder(s); default $SINGALONG_DATA or data/damp100")
+    ap.add_argument("--aug", action="store_true", help="fresh random augmentation (D11) of every recording each epoch")
+    ap.add_argument("--shift", type=int, default=6)
+    ap.add_argument("--device", default="cpu", help="'cuda' is untested with Talamo's Pipeline.fit; see README")
     ap.add_argument("--feedforward", action="store_true", help="no recurrent synapses (D04 variant A)")
-    ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--lr", type=float, default=1e-3, help="chip units; the torch trainer needed ~0.3, try --lr 0.1")
     ap.add_argument("--enc-threshold", type=float, default=120.0)
     ap.add_argument("--train-crops", type=int, default=0, help="limit number of train crops (0 = all)")
     ap.add_argument("--val-crops", type=int, default=256)
@@ -42,7 +48,8 @@ def main():
     out = data.REPO / "data" / "runs" / a.name
     out.mkdir(parents=True, exist_ok=True)
 
-    train_recs, val_recs = data.load_recordings("train"), data.load_recordings("val")
+    train_recs = data.load_recordings("train", datasets=a.data)
+    val_recs = data.load_recordings("val", datasets=a.data)
     X, Y = data.crops(train_recs)
     if a.train_crops:
         keep = rng.choice(len(X), a.train_crops, replace=False)
@@ -54,20 +61,32 @@ def main():
     print(f"train {len(train_recs)} singers -> {len(X)} crops of 2 s · val {len(Xv)} crops · "
           f"baseline (always {base['chord']}): F1 {base['f1']} exact {base['exact']}", flush=True)
 
-    pipe, snn_step = model.build_pipeline(a.hidden, recurrent=not a.feedforward, enc_threshold=a.enc_threshold)
+    pipe, snn_step = model.build_pipeline(a.hidden, recurrent=not a.feedforward, enc_threshold=a.enc_threshold,
+                                          out_neurons=a.out)
+    if a.device != "cpu":                                            # untested: Talamo may keep its own device
+        try:
+            pipe.to(torch.device(a.device))
+        except Exception as e:  # noqa: BLE001
+            print(f"could not move the pipeline to {a.device}: {e}; training on cpu")
+    loss_fn = model.DualRateLoss() if a.loss == "dual" and a.out >= 24 else model.RateBCE()
     log = open(out / "log.csv", "w")
     log.write("step,loss,val_f1,val_exact,out_rate,in_rate,sec\n")
     t0, best = time.time(), None
     ev = evaluate(pipe, Xv, Yv)
     print(f"epoch  0  val F1 {ev['f1']:.3f} exact {ev['exact']:.3f}", flush=True)
     for ep in range(1, a.epochs + 1):
-        model.fit(pipe, snn_step, X, Y, epochs=1, lr=a.lr)
+        if a.aug:
+            from singalong import augment
+            recs = [augment.random_augment(r, rng, dict(augment.DEFAULT, shift=a.shift)) for r in train_recs]
+            X, Y = data.crops(recs, start_offset=int(rng.integers(125)))
+        model.fit(pipe, snn_step, X, Y, epochs=1, lr=a.lr, loss_function=loss_fn)
         ev = evaluate(pipe, Xv, Yv)
         el = time.time() - t0
         print(f"epoch {ep:2d}  val F1 {ev['f1']:.3f} exact {ev['exact']:.3f}  ({el:.0f} s)", flush=True)
         log.write(f"{ep},nan,{ev['f1']},{ev['exact']},nan,nan,{el:.0f}\n"); log.flush()
-        if best is None or ev["f1"] > best["f1"]:
-            best = {**ev, "step": ep}
+        score = ev["f1"] + ev.get("pitch_acc", 0.0)
+        if best is None or score > best["score"]:
+            best = {**ev, "step": ep, "score": score}
             pipe.trainable_params.save(str(out / "trainable_params.json"))
 
     # --- quantize the best float model (int8 weights/bias/threshold per layer, as in the wristband notebook)

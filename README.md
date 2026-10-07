@@ -9,7 +9,8 @@ MNH26SVR/
 ├── README.md          ← you are here
 ├── scripts/           ← helper scripts (paper downloader, …); code goes in the repo root
 ├── jan/               ← Jan's code: scripts/ (analysis & experiments), prep/ (data prep),
-│                        singalong/ (SNN app on Innatera's Talamo pipeline: devcontainer, run.sh, train/sim checks),
+│                        singalong/ (the demo: GPU trainer, laptop host app, HMM selector, violin renderer,
+│                        C front-end kernel, Talamo scripts; README.md there is the runbook),
 │                        train/ (run visualiser) — see Hackathon/07 Experiments/2026-10-07 Chord SNN training.md
 └── Hackathon/         ← the team Obsidian vault (all notes, decisions, research, songs)
 ```
