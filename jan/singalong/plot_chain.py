@@ -33,8 +33,14 @@ def main():
     d = np.load(a.npz)
     v = d["voiced"].astype(bool)
     X = fe.normalise(d["X"].astype(np.float32), v)
-    mel = d["melody"]
-    ref = d["chord_pcs"]
+    if "melody" in d.files:                       # synthetic takes carry their own labels
+        mel, ref = d["melody"], d["chord_pcs"]
+    else:                                         # DAMP: one reference.npz for all singers, shifted per singer
+        r = np.load(Path(a.npz).parent / "reference.npz")
+        mel = np.where(r["melody"] >= 0, r["melody"] + 12 * int(d["octave"]) + int(d["transpose"]), -1)
+        ref = np.roll(r["chord_pcs"], int(d["transpose"]), axis=1)
+        T = min(len(X), len(mel))
+        X, v, mel, ref = X[:T], v[:T], mel[:T], ref[:T]
     evid, hmm = live.make_evidence(a.evidence), live.make_selector(a.selector, 80)
     T = len(X)
     E = np.zeros((T, 12)); P = np.zeros((T, 12)); notes = np.full((T, 3), np.nan)

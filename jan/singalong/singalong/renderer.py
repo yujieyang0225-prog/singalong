@@ -230,8 +230,12 @@ class WavSink:
     def sleep(self, s):
         pass
 
-    def close(self, voice=None, voice_gain=0.8, violin_gain=0.55, release_s=0.15):
-        """Render and write the file. voice: mono float array at self.sr (the singer), mixed under the violin."""
+    def close(self, voice=None, stereo=False, violin_db=-4.0, release_s=0.15):
+        """Render and write the file. voice: mono float array at self.sr (the singer).
+
+        Mono: singer + violin mixed. stereo=True: singer left, violin right. With a voice, levels follow the
+        typical singing loudness, and the violin is gated to the singing (silent before the first note).
+        """
         import wave
         for n in list(self.on):
             self.note_off(0, n)
@@ -257,16 +261,35 @@ class WavSink:
             env = np.clip((tt - t0) / 0.08, 0, 1) * np.clip((t1 + release_s - tt) / release_s, 0, 1)
             out[a:b] += tone * env * (vel / 127.0)
         out *= expr
-        out = out / (np.abs(out).max() + 1e-9) * violin_gain
+        vio = out
+        v = np.zeros(N)
         if voice is not None and len(voice):
-            v = np.asarray(voice, dtype=float)
-            out[:len(v)] += v / (np.abs(v).max() + 1e-9) * voice_gain
-        out /= max(1.0, float(np.abs(out).max()))
+            v[:min(len(voice), N)] = np.asarray(voice, dtype=float)[:N]
+            # loudness from the typical singing level, not from the loudest click of the phone recording
+            hop = sr // 50                                                  # 20 ms
+            nb = N // hop
+            env = np.sqrt(np.mean(v[:nb * hop].reshape(nb, hop) ** 2, axis=1) + 1e-12)
+            singing = env > np.percentile(env, 95) * 10 ** (-30 / 20)    # within 30 dB of the loud parts
+            v_rms = float(np.sqrt(np.mean(env[singing] ** 2))) if singing.any() else float(env.max())
+            v = v / (v_rms + 1e-9) * 0.12
+            # violin only while someone sings: gate opens in ~50 ms, holds through breaths (closes after ~1.5 s)
+            gate, g = np.zeros(nb), 0.0
+            for i, on in enumerate(singing):
+                g = min(1.0, g + 0.4) if on else max(0.0, g - 1 / 75)
+                gate[i] = g
+            vio = vio * np.interp(np.arange(N), np.arange(nb) * hop + hop // 2, gate)
+            on_rms = np.sqrt(np.mean(vio[np.repeat(singing, hop)[:N]] ** 2)) if singing.any() else 0.0
+            vio = vio / (on_rms + 1e-9) * 0.12 * 10 ** (violin_db / 20)          # violin ~4 dB under the singer
+        else:
+            vio = vio / (np.abs(vio).max() + 1e-9) * 0.5
+        chans = [v, vio] if stereo else [v + vio]
+        y = np.stack(chans, 1)
+        y = np.tanh(y * 1.2) / np.tanh(1.2)                                # soft limiter: peaks never clip
         with wave.open(self.path, "wb") as w:
-            w.setnchannels(1)
+            w.setnchannels(len(chans))
             w.setsampwidth(2)
             w.setframerate(sr)
-            w.writeframes((out * 32767).astype("<i2").tobytes())
+            w.writeframes((np.clip(y, -1, 1) * 32767).astype("<i2").tobytes())
         return self.path
 
 

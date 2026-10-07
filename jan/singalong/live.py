@@ -129,6 +129,7 @@ def main():
     ap.add_argument("--use", choices=["melody", "chord", "both"], default="both", help="which SNN head feeds the HMM")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--mix", help="singer audio to mix under the violin (only with --sink wav:...)")
+    ap.add_argument("--stereo", action="store_true", help="wav sink: singer left, violin right")
     a = ap.parse_args()
 
     sink = make_sink(a.sink)
@@ -178,7 +179,7 @@ def main():
                         voice = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(np.float32) / 32767
                 else:
                     voice = fe.decode_audio(a.mix)
-            print(f"wrote {sink.close(voice=voice)}")
+            print(f"wrote {sink.close(voice=voice, stereo=a.stereo)}")
         if isinstance(sink, rd.PrintSink):
             print(f"{n} frames, {sum(1 for e in sink.events if e[0] == 'on')} note-ons")
 
