@@ -93,7 +93,7 @@ def fit(pipe, snn_step, X, Y, epochs, lr=1e-3, lr_enc=1e-2, batch_size=32, quant
                              {"params": q("*snn_step.*bias*"), "lr": lr}])
     from .data import dense_dataset
     rec = talamo.utils.recording.Recorder(model_performance_metrics=talamo.utils.recording.ModelMetrics(None, {}))
-    pipe.fit(dataset=dense_dataset(X, Y), epochs=epochs, dataloader_args={"batch_size": batch_size, "shuffle": True},
+    pipe.fit(dataset=dense_dataset(X, Y), epochs=epochs, dataloader_args={"batch_size": batch_size, "shuffle": True, "drop_last": True},  # Talamo cats time-first outputs: equal batches only
              output_step=snn_step, output_activation=output_activation, optimizer=opt,
              loss_function=loss_function or RateBCE(), recorder=rec, quantizers=quantizers, verbose=0)
 

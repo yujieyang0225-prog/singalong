@@ -23,15 +23,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from singalong import model  # noqa: E402
 
 # substrings that identify each exported array in the Talamo parameter names (layer index 0 = hidden, 1 = output)
+# Fully qualified (checked against the real Talamo 4.7.1 names with --list, 2026-10-07). The earlier short
+# patterns ["1", "threshold"] / ["1", "bias"] also matched the encoder ("c1_if_encoder_step.threshold/.bias",
+# the "1" of "c1"), which comes first in the list: thr_o / b_o were exported as the encoder's values.
 MAP = {
     "enc_threshold": ["encoder", "threshold"],
-    "W_in": ["0", "synapses.weight"],
-    "W_rec": ["0", "recurrent_synapses.weight"],
-    "b_h": ["0", "bias"],
-    "thr_h": ["0", "threshold"],
-    "W_out": ["1", "synapses.weight"],
-    "b_o": ["1", "bias"],
-    "thr_o": ["1", "threshold"],
+    "W_in": ["snn_step.layers.0.synapses.weight"],
+    "W_rec": ["snn_step.layers.0.recurrent_synapses.weight"],
+    "b_h": ["snn_step.layers.0.neurons.bias_current"],
+    "thr_h": ["snn_step.layers.0.neurons.firing_threshold"],
+    "W_out": ["snn_step.layers.1.synapses.weight"],
+    "b_o": ["snn_step.layers.1.neurons.bias_current"],
+    "thr_o": ["snn_step.layers.1.neurons.firing_threshold"],
 }
 
 
@@ -62,8 +65,13 @@ def main():
             print(f"!! no parameter for {key} (patterns {subs}); fix MAP using the names above")
             continue
         if len(cands) > 1:
-            print(f"?? several candidates for {key}: {cands} -> taking the first")
+            raise SystemExit(f"several parameters match {key}: {cands}; make MAP unambiguous")
         out[key] = np.round(params[cands[0]]).astype(np.int64)
+    # C1 IF encoder: weighted = floor(x * 2**weight) * weight_sign + bias (talamo/encoders/c1/if_encoder.py)
+    for key, name in (("enc_weight", "c1_if_encoder_step.weight"), ("enc_weight_sign", "c1_if_encoder_step.weight_sign"),
+                      ("enc_bias", "c1_if_encoder_step.bias")):
+        if name in params:
+            out[key] = np.round(params[name]).astype(np.int64).ravel()
     # shape sanity: W_in should be [H, 48]; Talamo may store [48, H]
     if "W_in" in out and out["W_in"].shape[1] != 48 and out["W_in"].shape[0] == 48:
         for k in ("W_in", "W_rec", "W_out"):

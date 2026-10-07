@@ -121,7 +121,7 @@ def test_numpy_net_matches_torch_qat(dataset, tmp_path):
     X = r["X"][:300]
     with torch.no_grad():
         s_t = net(torch.tensor(X[None]))[0].numpy()
-    s_n = C1Net(tmp_path / "w.npz", enc_reset="subtract", layer_delay=0).run(X)
+    s_n = C1Net(tmp_path / "w.npz", enc_reset="zero", layer_delay=0).run(X)        # both follow C1 now
     assert s_t.shape == s_n.shape
     assert (s_t == s_n).mean() > 0.999
 

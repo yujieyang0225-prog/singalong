@@ -14,7 +14,8 @@ Evidence (--evidence), for audio sources:
   torch:<checkpoint>  train_torch.py checkpoint in PyTorch
 
 Selector (--selector): key (any song: 12 keys x 7 degree chords) | song (follows the Amazing Grace progression)
-Sink (--sink): print | midi[:<port substring>] | virtual[:<name>] | fluidsynth:<file.sf2>
+Sink (--sink): print | midi[:<port substring>] | virtual[:<name>] | fluidsynth:<file.sf2> | wav:<out.wav>
+  wav: offline render (no synth needed); --mix <singer audio> puts the singer under the violin
 
 Examples
   python3 live.py --source wav:../../data/synth40/synth00_000.wav --evidence baseline --selector song --sink print
@@ -48,6 +49,8 @@ def make_sink(spec):
         return rd.MidiSink(arg or "singalong", virtual=True)
     if kind == "fluidsynth":
         return rd.FluidSynthSink(arg)
+    if kind == "wav":
+        return rd.WavSink(arg or "demo.wav", sr=fe.SR)
     raise SystemExit(f"unknown sink {spec}")
 
 
@@ -125,6 +128,7 @@ def main():
     ap.add_argument("--realtime", action="store_true")
     ap.add_argument("--use", choices=["melody", "chord", "both"], default="both", help="which SNN head feeds the HMM")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--mix", help="singer audio to mix under the violin (only with --sink wav:...)")
     a = ap.parse_args()
 
     sink = make_sink(a.sink)
@@ -148,6 +152,8 @@ def main():
                 chord = None
             elif a.use == "chord":
                 mel = None
+            if hasattr(sink, "set_time"):
+                sink.set_time(n / fe.FPS)
             state, post = hmm.step(mel, chord, onset=True)
             pcs = hmm.pcs(state)
             root = hmm.em.T[state].argmax()
@@ -161,6 +167,18 @@ def main():
         pass
     finally:
         render.all_off()
+        if hasattr(sink, "close"):
+            voice = None
+            if a.mix:
+                if a.mix.endswith(".wav"):
+                    import wave
+                    with wave.open(a.mix) as w:
+                        if w.getframerate() != fe.SR or w.getsampwidth() != 2:
+                            raise SystemExit(f"--mix wav must be 16 kHz / 16 bit, use another format via ffmpeg")
+                        voice = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(np.float32) / 32767
+                else:
+                    voice = fe.decode_audio(a.mix)
+            print(f"wrote {sink.close(voice=voice)}")
         if isinstance(sink, rd.PrintSink):
             print(f"{n} frames, {sum(1 for e in sink.events if e[0] == 'on')} note-ons")
 

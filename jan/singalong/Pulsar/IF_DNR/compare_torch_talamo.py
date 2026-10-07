@@ -47,7 +47,7 @@ def main():
             print(f"numpy enc_reset={enc:8s} layer_delay={delay}: agreement with Talamo {results[(enc, delay)]:.3f} "
                   f"(spikes {int(s_np.sum())} vs {int(s_tal.sum())})")
     if a.sim:
-        soc = talamo.device.c1.Soc(simulate=True, clock_frequency=CLOCK_MHZ * 1_000_000)
+        soc = talamo.device.c1.Soc(simulate=True, clock_frequency=CLOCK_MHZ)
         snn_step.to(soc)
         s_sim = pipe(ds, verbose=0).data_as_numpy()[0][-len(X):]
         print(f"simulator vs Talamo software: {(s_sim == s_tal).mean():.3f}")

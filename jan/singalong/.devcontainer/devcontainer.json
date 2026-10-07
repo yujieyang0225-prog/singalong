@@ -29,7 +29,7 @@
 	"customizations": {
 		"vscode": {
 			"extensions": ["ms-python.python", "ms-toolsai.jupyter"],
-			"settings": { "python.defaultInterpreterPath": "/bin/python3" }
+			"settings": { "python.defaultInterpreterPath": "/usr/local/bin/python3" }
 		}
 	}
 }

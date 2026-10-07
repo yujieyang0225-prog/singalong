@@ -11,15 +11,16 @@ ARG REMOTE_GID=$REMOTE_UID
 RUN addgroup --gid ${REMOTE_GID} ${REMOTE_USER} \
     && adduser --disabled-password --uid ${REMOTE_UID} --gid ${REMOTE_GID} ${REMOTE_USER} \
     && apt-get update \
-    && apt-get install -y sudo \
+    && apt-get install -y --no-install-recommends sudo ffmpeg \
     && echo $REMOTE_USER ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$REMOTE_USER \
     && chmod 0440 /etc/sudoers.d/$REMOTE_USER
 
 # dependencies of Innatera's wristband package (gesture_recognition_imu, mounted from the starter repo),
 # which we import for GRSnn2LayersRNN and the quantizers; versions from its pyproject.toml
 RUN pip install --no-cache-dir seaborn "scikit-learn==1.6.0" "torchsummary==1.5.1" "pyzenodo3==1.0.2" \
-    "pyelftools==0.31" pretty_midi
+    "pyelftools==0.31" pretty_midi pytest
 
 ENV HOME=/home/${REMOTE_USER}
-ENV PATH=${HOME}/.local/bin:${PATH}
+# the SDK's Python (3.12, Talamo + torch) must win over any Debian python3 that apt pulls in
+ENV PATH=${HOME}/.local/bin:/usr/local/bin:${PATH}
 USER ${REMOTE_USER}

@@ -79,6 +79,9 @@ def main():
             from singalong import augment
             recs = [augment.random_augment(r, rng, dict(augment.DEFAULT, shift=a.shift)) for r in train_recs]
             X, Y = data.crops(recs, start_offset=int(rng.integers(125)))
+            if a.train_crops:                                       # honour --train-crops also with --aug
+                keep = rng.choice(len(X), min(a.train_crops, len(X)), replace=False)
+                X, Y = X[keep], Y[keep]
         model.fit(pipe, snn_step, X, Y, epochs=1, lr=a.lr, loss_function=loss_fn)
         ev = evaluate(pipe, Xv, Yv)
         el = time.time() - t0

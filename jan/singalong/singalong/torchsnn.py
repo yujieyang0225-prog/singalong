@@ -3,7 +3,7 @@
 Equations (Pulsar SNN fabric (DNR) limits, Talamo SDK notes in the vault):
     IF encoder (per input line c):  A_c += x_c ;  spike if A_c >= theta_c ;  A_c -= theta_c      (level code, D03 A)
     digital neuron:                 U += W s_in + W_rec s_prev + b ;  U = max(U, 0) (v_floor 'zero')
-                                    spike if U >= thr ;  U = 0 after a spike (reset to zero, no leak except bias)
+                                    spike if U > thr  ;  U = 0 after a spike (reset to zero, no leak except bias)
     one SNN step per 16 ms frame; the recurrent input is the layer's own spikes from the previous step.
 
 Chip units from the start: weights/bias in int8 range, thresholds integers (wristband example: 127 per layer),
@@ -51,7 +51,7 @@ class SpikeFn(torch.autograd.Function):
     def forward(ctx, v, width):
         ctx.save_for_backward(v)
         ctx.width = width
-        return (v >= 0).to(v.dtype)
+        return (v > 0).to(v.dtype)                    # C1: spike if U > threshold (strict), Talamo DigitalFireFunction
 
     @staticmethod
     def backward(ctx, g):
@@ -86,7 +86,7 @@ class IFEncoder(nn.Module):
         for t in range(x.shape[1]):
             acc = acc + x[:, t]
             s = spike((acc - th) / th, 1.0)
-            acc = acc - s * th
+            acc = acc * (1 - s)                         # C1 IF encoder resets to 0 (talamo/encoders/c1)
             out.append(s)
         return torch.stack(out, 1)
 
@@ -131,7 +131,7 @@ class C1Layer(nn.Module):
             U = U + I_in[:, t]
             if Wr is not None:
                 U = U + s_prev @ Wr.t()
-            U = U.clamp(min=0)                          # v_floor 'zero'
+            U = U.clamp(min=0, max=65535)               # v_floor 'zero', 16-bit membrane (C1)
             s = spike((U - thr) / thr, 1.0)
             U = U * (1 - s)                             # reset to zero
             s_prev = s

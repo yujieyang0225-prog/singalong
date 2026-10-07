@@ -193,6 +193,83 @@ class FluidSynthSink:
         time.sleep(s)
 
 
+class WavSink:
+    """Offline sink: records the violin's MIDI events with timestamps and renders them to a WAV file.
+
+    For listening to the demo without FluidSynth / a MIDI synth (e.g. in the SDK container). The tone is a
+    simple additive string sound (harmonics 1..7, light vibrato, 80 ms attack, 150 ms release), shaped by
+    velocity, CC11 (dynamics, D15) and pitch bend (±2 semitones, D17). Optionally mixes in the singer.
+    The caller sets the clock with set_time(seconds) once per frame (live.py does).
+    """
+
+    def __init__(self, path, sr=16000):
+        self.path, self.sr, self.t = str(path), sr, 0.0
+        self.on, self.notes = {}, []               # note -> (t0, vel); finished (t0, t1, note, vel)
+        self.cc11, self.bend = [(0.0, 100)], [(0.0, 0)]
+
+    def set_time(self, t):
+        self.t = float(t)
+
+    def note_on(self, ch, n, vel):
+        if n in self.on:
+            self.note_off(ch, n)
+        self.on[n] = (self.t, vel)
+
+    def note_off(self, ch, n):
+        if n in self.on:
+            t0, vel = self.on.pop(n)
+            self.notes.append((t0, self.t, n, vel))
+
+    def control(self, ch, cc, v):
+        if cc == 11:
+            self.cc11.append((self.t, v))
+
+    def pitch_bend(self, ch, v):
+        self.bend.append((self.t, v))
+
+    def sleep(self, s):
+        pass
+
+    def close(self, voice=None, voice_gain=0.8, violin_gain=0.55, release_s=0.15):
+        """Render and write the file. voice: mono float array at self.sr (the singer), mixed under the violin."""
+        import wave
+        for n in list(self.on):
+            self.note_off(0, n)
+        sr = self.sr
+        dur = max([t1 for _, t1, _, _ in self.notes] + [self.t])
+        if voice is not None:
+            dur = max(dur, len(voice) / sr)
+        N = int((dur + release_s) * sr) + 1
+        t = np.arange(N) / sr
+        ct, cv = np.array(self.cc11, dtype=float).T
+        expr = np.interp(t, ct, cv) / 127.0
+        bt, bv = np.array(self.bend, dtype=float).T
+        bend_st = np.interp(t, bt, bv) / 8192.0 * 2.0
+        out = np.zeros(N)
+        for t0, t1, n, vel in self.notes:
+            a, b = int(t0 * sr), min(int((t1 + release_s) * sr), N)
+            if b <= a:
+                continue
+            tt = t[a:b]
+            f = 440.0 * 2 ** ((n - 69 + bend_st[a:b]) / 12) * (1 + 0.004 * np.sin(2 * np.pi * 5.5 * tt))
+            ph = 2 * np.pi * np.cumsum(f) / sr
+            tone = sum(np.sin(h * ph) / h ** 1.2 for h in range(1, 8))
+            env = np.clip((tt - t0) / 0.08, 0, 1) * np.clip((t1 + release_s - tt) / release_s, 0, 1)
+            out[a:b] += tone * env * (vel / 127.0)
+        out *= expr
+        out = out / (np.abs(out).max() + 1e-9) * violin_gain
+        if voice is not None and len(voice):
+            v = np.asarray(voice, dtype=float)
+            out[:len(v)] += v / (np.abs(v).max() + 1e-9) * voice_gain
+        out /= max(1.0, float(np.abs(out).max()))
+        with wave.open(self.path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(sr)
+            w.writeframes((out * 32767).astype("<i2").tobytes())
+        return self.path
+
+
 def chord_label(pcs, root_pc=None):
     tones = [i for i in range(12) if pcs[i] > 0]
     if root_pc is None:

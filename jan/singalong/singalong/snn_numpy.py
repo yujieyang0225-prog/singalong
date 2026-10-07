@@ -19,6 +19,12 @@ class C1Net:
     def __init__(self, npz_path, enc_reset="subtract", layer_delay=0):
         d = np.load(npz_path, allow_pickle=False)
         self.enc_thr = d["enc_threshold"].astype(np.int64)
+        n_in = d["W_in"].shape[1]
+        # C1 IF encoder (talamo/encoders/c1/if_encoder.py): weighted = floor(x * 2**w) * sign + bias; older exports
+        # without these keys behave as w = 0, sign = 1, bias = 0 (which under-drives the encoder by 2**w)
+        self.enc_w = d["enc_weight"].astype(np.int64) if "enc_weight" in d.files else np.zeros(n_in, np.int64)
+        self.enc_sign = d["enc_weight_sign"].astype(np.int64) if "enc_weight_sign" in d.files else np.ones(n_in, np.int64)
+        self.enc_bias = d["enc_bias"].astype(np.int64) if "enc_bias" in d.files else np.zeros(n_in, np.int64)
         self.W_in, self.b_h, self.thr_h = d["W_in"].astype(np.int64), d["b_h"].astype(np.int64), int(d["thr_h"].ravel()[0])
         self.W_rec = d["W_rec"].astype(np.int64) if "W_rec" in d.files else None
         self.W_out, self.b_o, self.thr_o = d["W_out"].astype(np.int64), d["b_o"].astype(np.int64), int(d["thr_o"].ravel()[0])
@@ -34,18 +40,22 @@ class C1Net:
         self.s_h_delayed = np.zeros(self.n_h, np.int64)
 
     def encode(self, x):
-        self.acc += np.asarray(x, np.int64)
-        s = (self.acc >= self.enc_thr).astype(np.int64)
-        if self.enc_reset == "subtract":
+        w = np.floor(np.asarray(x, np.float64) * 2.0 ** self.enc_w).astype(np.int64) * self.enc_sign + self.enc_bias
+        self.acc += w
+        if self.enc_reset == "subtract":                 # T1-style variant, kept for comparison
+            s = (self.acc >= self.enc_thr).astype(np.int64)
             self.acc -= s * self.enc_thr
-        else:
+        else:                                             # "zero" = C1 (Talamo): spike if acc > thr, then acc = 0
+            s = (self.acc > self.enc_thr).astype(np.int64)
             self.acc *= (1 - s)
         return s
 
     @staticmethod
     def _neuron(U, I, thr):
-        U = np.maximum(U + I, 0)
-        s = (U >= thr).astype(np.int64)
+        # C1 digital neuron (talamo/snn/neuron/c1/digital_neuron.py): U += W·s + bias, clamp to [0, 2^16 - 1]
+        # (v_floor "zero"), spike if U > threshold (strict), reset to 0
+        U = np.clip(U + I, 0, 2 ** 16 - 1)
+        s = (U > thr).astype(np.int64)
         return U * (1 - s), s
 
     def step(self, x, return_all=False):
