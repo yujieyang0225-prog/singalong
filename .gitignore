@@ -225,3 +225,6 @@ __marimo__/
 
 # downloaded datasets (licences: see 09 Decisions/D10)
 data/
+
+# Innatera agent skills: symlinks to the grp-gold-neurotum clone (proprietary, not committed)
+.claude/skills/

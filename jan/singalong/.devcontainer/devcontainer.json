@@ -1,0 +1,35 @@
+// Dev container for the sing-along SNN app, based on Innatera's example apps (SDK 4.7.1).
+// Mounts the whole MNH26SVR repo (code + data/) and Innatera's starter repo clone (read-only),
+// whose wristband package provides the recurrent layer and quantizers we reuse (not copied: proprietary).
+{
+	"name": "singalong (innatera sdk 4.7.1)",
+	"build": {
+		"context": "..",
+		"dockerfile": "Dockerfile",
+		"args": { "REMOTE_USER": "${localEnv:USER}" }
+	},
+	"remoteUser": "${localEnv:USER}",
+	"updateRemoteUserUID": true,
+	"workspaceMount": "source=${localWorkspaceFolder}/../..,target=/workspace,type=bind",
+	"workspaceFolder": "/workspace/jan/singalong",
+	"containerEnv": {
+		"PYTHONPATH": "/opt/grp-gold-neurotum/inertial-measurement-unit/wristbandgesturerecognition:/workspace/jan/singalong"
+	},
+	"runArgs": [
+		"--privileged",
+		"--device-cgroup-rule", "c 188:* rmw",
+		"--group-add", "dialout",
+		"--group-add", "plugdev",
+		"--group-add", "innatera"
+	],
+	"mounts": [
+		"src=${localEnv:HOME}/Documents/Hackathon repos/grp-gold-neurotum,dst=/opt/grp-gold-neurotum,type=bind,readonly",
+		"src=/dev,dst=/dev,type=bind"
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": ["ms-python.python", "ms-toolsai.jupyter"],
+			"settings": { "python.defaultInterpreterPath": "/bin/python3" }
+		}
+	}
+}
