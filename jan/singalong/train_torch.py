@@ -7,8 +7,7 @@
 Per epoch: fresh random augmentation of every training recording (D11), fresh 2 s crops (random offset),
 BPTT over the crop, AdamW. The last --qat-epochs epochs round weights/thresholds with a straight-through
 estimator. Outputs in data/runs/<name>/: checkpoint.pt, weights_int8.npz (for snn_numpy and Talamo import),
-log.csv, metrics.json. Visualise with jan/train/visualise_run.py (--npz) or run the host app with
---evidence snn:<weights_int8.npz>.
+log.csv, metrics.json. Picture: plot_chain.py --evidence snn:<weights_int8.npz>; sound: live.py.
 """
 from __future__ import annotations
 

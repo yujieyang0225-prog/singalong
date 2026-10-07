@@ -83,7 +83,8 @@ Compare the three implementations on one input (explains the 73.7 % simulator ag
 | perfect pitch → score follower | 0.76 | 0.82 | 24 |
 | baseline (harmonic sum, no SNN) → score follower | 0.71 | 0.77 | 22 |
 | baseline → key HMM (any song) | 0.09 | 0.80 | 51 |
-| trained int8 SNN (torch, synthetic) → score follower | see `metrics.json` of the latest run / vault note | | |
+| **trained int8 SNN 48→80→24 (torch, 40 epochs, synthetic) → score follower** | **0.76** | **0.80** | 24 |
+| trained int8 SNN 48→64→24 (15 epochs) → score follower | 0.70 | 0.73 | 24 |
 
 ## Files
 ```
