@@ -4,8 +4,8 @@ Model looked at: `handoff/runs/A_vocalset_P/weights_int8.npz` (md5 `64623170…`
 Branch `yujie/singalong-chip`, started from `singalong-pitch-handoff` at `2a612c3`.
 Kept up to date as the chip work proceeds; the log at the end says what changed and when.
 
-Everything here was measured in **Talamo 4.7.1's software model** of the chip and in an integer
-reference. Nothing here is a board measurement yet.
+Sections 1 to 4 were measured in **Talamo 4.7.1's software model** of the chip and in an integer
+reference. Section 5 has the first board measurement.
 
 ## Short version
 
@@ -15,6 +15,7 @@ reference. Nothing here is a board measurement yet.
 | Does Talamo's model then behave like the trained network? | Not spike for spike: two rules differ (below). **By decision these are kept as they are.** |
 | What do those differences cost? | About 1 point of pitch accuracy at most. No retraining is needed because of them. |
 | What should the next training session change? | Nothing is required. Section 4 lists what would make the model safer on the chip. |
+| Does the network fit and run on the real chip? | **Yes** (2026-10-08): it builds, the chip accepts it, and one 2 s window came back identical to the reference. |
 
 ## 1. Accuracy to expect on the chip from the same weights
 
@@ -108,14 +109,41 @@ Ordered by how much it should matter on the chip. Items marked *suggestion* are 
 6. **Keep the 31-frame burn-in in mind for deployment** (*suggestion*). The chip side plans to send
    2 s windows and discard the first 0.5 s of each, which matches how the crops were trained.
 
-## 5. Open on the chip side
+## 5. On the chip
 
-- Build the network for the chip and confirm it fits (104 neurons, fan-in 128).
-- Board against the reference on the handoff test data.
-- Round-trip time for a 125-frame window; live loop with the laptop front-end.
+**Built and run on a Pulsar EVK, 2026-10-08** (`yujie/chip/build_chip.py`; RAM boot, nothing flashed).
+The application is host-fed: the PC sends 125 frames of 48 bands, the chip runs the encoder and the
+recurrent network, and returns the output spikes of every frame.
+
+| | |
+| --- | --- |
+| Network | 48 inputs, 80 recurrent hidden, 24 outputs: 104 neurons |
+| Synapses in use | 10,917 non-zero (3,766 input, 6,215 recurrent, 936 output) |
+| Largest fan-in | 128 (48 inputs + 80 recurrent), which is the limit the trainer's `fits_c1` assumes: **no headroom** |
+| Talamo's mapper | accepted it without a warning; serialized configuration 15,685 bytes |
+| Application RAM | 91,424 bytes of 384 KB (23 %) |
+| On the board, one 2 s window | **99 output spikes, every one in the same place as the reference** |
+| Time for that call | 7.2 s, almost all of it the boot; the per-window time is not measured yet |
+
+Consequences for training:
+
+- **80 recurrent hidden neurons is the largest that fits** with 48 inputs under this layout. A wider
+  hidden layer needs fewer inputs, sparser recurrence, or the "plane pairing" the trainer mentions,
+  which has not been tried on the board.
+- Outputs 0 to 11 are silent on the board as intended, so a pitch-only model costs nothing extra.
+- One window is not a statistic. The board comparison over the whole test set is the next step.
+
+Still open:
+
+- Board against the reference on the full handoff test data, with spike counts and pitch accuracy.
+- Time per window with the board kept booted; then the live loop with the laptop front-end.
 
 ## Log
 
+- **2026-10-08, later** Network built for the chip and run on the board: it fits, and one window
+  matches the reference exactly (section 5). Noted while reading, not yet tested: `sim_check.py`'s
+  `load_quantized` builds the pipeline without `out_neurons`, so it would create 12 outputs for a
+  24-output run.
 - **2026-10-08** Import fixed; rule differences identified and measured; this file written.
   An earlier verbal report said the trainer's encoder resets by subtraction. That was wrong: it came
   from the README and the `snn_numpy.py` default. The trainer's code resets to zero, like the chip.
