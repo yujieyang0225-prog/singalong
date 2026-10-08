@@ -1,0 +1,16 @@
+{
+ "sets": {
+  "vs_songs": {
+   "pitch_acc": 0.53,
+   "chord_out_rate": 0.0
+  },
+  "vs_exer": {
+   "pitch_acc": 0.599,
+   "chord_out_rate": 0.0
+  },
+  "damp250": {
+   "pitch_acc": 0.364,
+   "chord_out_rate": 0.0
+  }
+ }
+}

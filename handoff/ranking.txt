@@ -1,0 +1,6 @@
+# simon/eval_pitch.py on gpucluster1, 2026-10-08
+crops: vs_songs 427, vs_exer 512, damp250 512   (ranked by vs_songs)
+run                                 vs_songs     vs_exer     damp250  chord out
+A_vocalset_P                           0.530       0.599       0.364     0.0000
+A_vocalset_lr0.03                      0.378       0.486       0.263     0.0192
+A_vocalset_lr0.1                       0.322       0.466       0.233     0.0002
