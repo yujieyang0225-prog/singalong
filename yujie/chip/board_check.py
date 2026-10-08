@@ -24,6 +24,7 @@ sys.path[:0] = [str(ROOT / "jan" / "singalong"), str(ROOT / "simon"), str(Path(_
 import talamo  # noqa: E402
 import build_chip  # noqa: E402
 import chipref  # noqa: E402
+import board_lock  # noqa: E402
 import eval_pitch  # noqa: E402
 from singalong import data, metrics  # noqa: E402
 from singalong.torchsnn import spike_rate  # noqa: E402
@@ -37,9 +38,14 @@ def f1(p, q):
 
 
 class Board:
-    def __init__(self, run, npz):
-        self.app = Path(run).resolve() / f"app_hostfed_{FRAMES}"
-        self.pipe, _, self.w, _ = build_chip.load(run, npz)
+    def __init__(self, run, npz, banner=False):
+        if banner:                                  # same network behind the display-banner step
+            import build_banner
+            self.app = Path(run).resolve() / build_banner.APP
+            self.pipe, _, self.w, _ = build_banner.load(run, npz)
+        else:
+            self.app = Path(run).resolve() / f"app_hostfed_{FRAMES}"
+            self.pipe, _, self.w, _ = build_chip.load(run, npz)
         self.pipe.to(talamo.device.c1.Soc(simulate=False, clock_frequency=build_chip.CLOCK_MHZ))
 
     def clear(self):
@@ -52,6 +58,10 @@ class Board:
     def run(self, X, attempts=3):
         """X [N, 125, 48] -> (spikes [N, 125, 24] int8, seconds for the whole call including the boot)."""
         ds = data.dense_dataset(torch.tensor(np.asarray(X, dtype=np.float32)), torch.zeros(len(X), FRAMES, 14))
+        with board_lock.held('board_check'):
+            return self._run_locked(X, ds, attempts)
+
+    def _run_locked(self, X, ds, attempts):
         for attempt in range(attempts):
             started = time.time()
             try:
@@ -74,8 +84,9 @@ def main():
     ap.add_argument("--damp", default="../../handoff/testdata/damp250")
     ap.add_argument("--crops", type=int, default=150, help="windows per test set (the first N of eval_pitch's fixed crops)")
     ap.add_argument("--timing", action="store_true", help="only measure the time per window")
+    ap.add_argument("--banner", action="store_true", help="check the display-banner application")
     a = ap.parse_args()
-    board = Board(a.run, a.npz)
+    board = Board(a.run, a.npz, a.banner)
     out_dir = Path(__file__).parent
 
     if a.timing:

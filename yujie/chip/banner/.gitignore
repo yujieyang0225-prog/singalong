@@ -1,0 +1,4 @@
+# Left behind by the SDK build, which compiles this folder in place
+*.o
+*.a
+.*.cmd

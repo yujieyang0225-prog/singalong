@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 import json
 from pathlib import Path
 import signal
+import os
 import resource
 import sys
 import time
@@ -28,13 +29,17 @@ def main():
     ap.add_argument('--npz', type=Path, default=root / 'handoff/runs/A_vocalset_P/weights_int8.npz')
     ap.add_argument('--verify-reference', action='store_true')
     ap.add_argument('--comm-debug', action='store_true')
+    ap.add_argument('--banner', action='store_true', help='the application that shows a fixed text on the EVK display')
     a = ap.parse_args()
     def stop(*_):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, stop)
+    emit(dict(type='hello', pid=os.getpid()))      # lets the host signal this process if it hangs
     try:
         with redirect_stdout(sys.stderr):
-            board = PersistentBoard(a.run, a.npz)
+            if a.banner:
+                from check_banner import BannerBoard
+            board = (BannerBoard if a.banner else PersistentBoard)(a.run, a.npz)
             board.pipe.embedded_config.enable_comm_debug_logs = a.comm_debug
             board.__enter__()
         try:
@@ -53,7 +58,6 @@ def main():
                 raise RuntimeError('Startup silence produced spikes')
             emit(dict(type='ready', mode='physical-chip', boot_seconds=board.boot_seconds,
                       prime_seconds=prime_seconds, startup_silence_seconds=silence_seconds,
-                      transport_setup_seconds=board.transport_setup_seconds,
                       startup_active_exact=True, startup_silence_exact=True, application_boots=1))
             for line in sys.stdin:
                 request = json.loads(line)
@@ -70,8 +74,7 @@ def main():
                 emit(dict(type='result', id=request['id'], spikes=spikes.tolist(),
                           inference_seconds=seconds, exact_reference=same,
                           worker_cpu_seconds=time.process_time(),
-                          worker_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
-                          **board.transport_stats()))
+                          worker_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024))
         finally:
             with redirect_stdout(sys.stderr):
                 board.__exit__(None, None, None)

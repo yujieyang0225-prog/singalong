@@ -10,6 +10,7 @@ import argparse
 from collections import deque
 import json
 import math
+import os
 from pathlib import Path
 import queue
 import resource
@@ -26,21 +27,34 @@ sys.path.insert(0, str(ROOT / 'jan/singalong'))
 import live as host
 from singalong import frontend as fe, evidence as ev, renderer as rd
 from windowing import newest_rates, window_end
+from pitch_tracker import PitchTracker
 
 
 class ChipClient:
-    def __init__(self, container, verify, debug=False):
-        command = ['docker', 'exec', '-i', container, 'python3', '-u', '/workspace/yujie/chip/board_worker.py']
-        if verify:
-            command.append('--verify-reference')
-        if debug:
-            command.append('--comm-debug')
+    def __init__(self, container, verify, debug=False, window_timeout=3.0, command=None, model=None, banner=False):
+        self.container, self.window_timeout, self.pid = container, window_timeout, None
+        self.local = command is not None          # a stand-in worker started directly (tests)
+        if command is None:
+            command = ['docker', 'exec', '-i', container, 'python3', '-u', '/workspace/yujie/chip/board_worker.py']
+            if verify:
+                command.append('--verify-reference')
+            if debug:
+                command.append('--comm-debug')
+            if banner:
+                command.append('--banner')
+            if model:                             # otherwise the worker's own default model
+                command += ['--run', f'/workspace/data/runs/{model}_talamo',
+                            '--npz', f'/workspace/handoff/runs/{model}/weights_int8.npz']
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
         self.messages = queue.Queue()
         def read():
             try:
                 for line in self.process.stdout:
-                    self.messages.put(json.loads(line))
+                    message = json.loads(line)
+                    if message.get('type') == 'hello':
+                        self.pid = message['pid']      # the worker's process, to signal it if it hangs
+                    else:
+                        self.messages.put(message)
             except Exception as error:
                 self.messages.put(dict(type='error', error=str(error)))
             finally:
@@ -68,7 +82,7 @@ class ChipClient:
         t = time.perf_counter()
         self.process.stdin.write(json.dumps(dict(id=index, features=x.tolist())) + '\n')
         self.process.stdin.flush()
-        response = self.receive(10)
+        response = self.receive(self.window_timeout)
         if response.get('type') != 'result' or response.get('id') != index:
             raise RuntimeError('Board response sequence mismatch')
         response['host_roundtrip_seconds'] = time.perf_counter() - t
@@ -80,12 +94,41 @@ class ChipClient:
                 self.process.stdin.close()  # EOF lets worker exit its board context
             except BrokenPipeError:
                 pass
+        if not self.exited(5):
+            print('Board worker did not exit after end of input; sending it a terminate signal', file=sys.stderr, flush=True)
+            self.terminate()
+            if not self.exited(10):
+                # Never SIGKILL the board holder. It still holds the board lock, so nothing can collide with it.
+                print(f'ERROR: board worker (process {self.pid} in {self.container}) is still running and holds the '
+                      'board. It was not force-killed; stop it before using the board again.', file=sys.stderr, flush=True)
+        # stdout is left to the reader thread: closing it here would wait for a read that may never return.
+
+    def exited(self, seconds):
         try:
-            self.process.wait(timeout=15)
+            self.process.wait(timeout=seconds)
+            return True
         except subprocess.TimeoutExpired:
-            # Do not SIGKILL the board holder. A blocked SDK process needs explicit recovery.
-            print('ERROR: worker did not exit after EOF; inspect singalong_sdk before reuse', file=sys.stderr)
-        self.process.stdout.close()
+            return False
+
+    def terminate(self):
+        if self.local:
+            self.process.terminate()
+        elif self.pid is not None:
+            subprocess.run(['docker', 'exec', self.container, 'kill', '-TERM', str(self.pid)], timeout=10,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+DEFAULT_MODEL = 'A_vocalset_P'
+CLEAR_BOARD = ('python3 /workspace/yujie/chip/board_lock.py "start-up clear" -- python3 "$SPINE_DIR/tools/c1util.py" -S '
+               '/workspace/data/runs/A_vocalset_P_talamo/app_hostfed_125/bin/c1/release/app.c1boot')
+
+
+def make_selector(a):
+    """'pitch' follows the sung note directly; the others are the team's existing selectors."""
+    if a.selector == 'pitch':
+        release = getattr(a, 'release', None)
+        return PitchTracker(release_s=.4 if release is None else release, smooth=getattr(a, 'smooth', 12))
+    return host.make_selector(a.selector, a.bpm)
 
 
 def summary(values):
@@ -114,9 +157,11 @@ class LiveRun:
                             connection_failures=0, recoveries=0, feature_nonzero_frames=0,
                             pcm_peak=0.0, pcm_clipped_samples=0)
         self.epoch = None
+        self.stopped_at = None
 
     def fail(self, error):
         self.errors.put(error)
+        self.stopped_at = self.stopped_at or time.perf_counter()
         self.stop.set()
         with self.cv:
             self.cv.notify_all()
@@ -232,9 +277,6 @@ class LiveRun:
                     if last is None:
                         self.metrics['startup_frames_omitted'] = int(indices[0])
                     timing = {k: response[k] for k in ('inference_seconds', 'host_roundtrip_seconds', 'exact_reference')}
-                    for key in ('worker_open_fds', 'pending_events', 'drained_events', 'max_event_id'):
-                        if key in response:
-                            timing[key] = response[key]
                     timing.update(update=update, end_frame_exclusive=end, submitted_seconds=submitted - self.epoch)
                     self.metrics['windows'].append(timing)
                     for key in ('worker_cpu_seconds', 'worker_peak_rss_bytes'):
@@ -245,17 +287,41 @@ class LiveRun:
                         raise RuntimeError('Three consecutive round trips exceeded update period')
                     for index, rate in zip(indices, rates):
                         row = rows[int(index) - (end - 125)]
-                        self.put((int(index), rate[12:24], row[2], row[3]))
+                        self.put((int(index), rate[12:24], row[2], row[3], row[1]))
                     last = int(indices[-1])
                 else:
                     index, bands, db, voiced = rows[0]
                     melody, _ = baseline(bands, voiced)
-                    self.put((index, melody, db, voiced))
+                    self.put((index, melody, db, voiced, bands))
                 update += 1
         except BaseException as error:
             self.fail(error)
         finally:
             self.put(None)
+
+    def start_board(self):
+        """Start the worker. A start whose handshake never completes is cleared (RAM boot only) and
+        tried again, visibly and counted, before any audio is processed. Other errors stop at once."""
+        failures = self.metrics.setdefault('startup_failures', [])
+        attempts = getattr(self.a, 'start_attempts', 1)
+        for attempt in range(1, attempts + 1):
+            try:
+                return ChipClient(self.a.container, self.a.verify_reference, getattr(self.a, 'worker_debug', False),
+                                  getattr(self.a, 'window_timeout', 3.0), getattr(self.a, 'worker_command', None),
+                                  getattr(self.a, 'model', None), getattr(self.a, 'banner', False))
+            except RuntimeError as error:
+                self.metrics['connection_failures'] += 1
+                failures.append(str(error)[:200])
+                handshake = 'waiting for sync' in str(error) or 'no complete sample' in str(error)
+                if not handshake or attempt == attempts:
+                    raise
+                print(f'Board start {attempt} of {attempts} failed in the handshake; '
+                      'clearing the board (RAM only) and starting again...', flush=True)
+                clear = CLEAR_BOARD.replace(DEFAULT_MODEL, getattr(self.a, 'model', None) or DEFAULT_MODEL)
+                if getattr(self.a, 'banner', False):
+                    clear = clear.replace('app_hostfed_125/', 'app_hostfed_125_banner/')
+                subprocess.run(['docker', 'exec', self.a.container, 'sh', '-c', clear], timeout=120,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def run(self):
         client = None
@@ -265,21 +331,23 @@ class LiveRun:
         try:
             if self.a.mode == 'chip':
                 print('Starting physical board worker (SDK import, one RAM boot, startup handshake)...', flush=True)
-                try:
-                    client = ChipClient(self.a.container, self.a.verify_reference, getattr(self.a, 'worker_debug', False))
-                except BaseException:
-                    self.metrics['connection_failures'] += 1
-                    raise
+                client = self.start_board()
                 self.metrics.update(client.ready)
             print(f'ACTIVE INFERENCE MODE: {self.a.mode.upper()} | source={self.a.source} | melody only', flush=True)
             sink = host.make_sink(self.a.sink)
-            hmm = host.make_selector(self.a.selector, self.a.bpm)
-            render = rd.Renderer(sink, fps=fe.FPS)
+            hmm = make_selector(self.a)
+            render = hmm.renderer(sink) if hasattr(hmm, 'renderer') else rd.Renderer(sink, fps=fe.FPS)
             capture = threading.Thread(target=self.capture, daemon=True)
             inference = threading.Thread(target=self.infer, args=(client,), daemon=True)
             capture.start()
             inference.start()
-            previous, label = None, None
+            previous, label, quiet = None, None, 0
+            release = getattr(self.a, 'release', None)        # chord selectors: off unless asked for
+            chord_release = None if release is None or hasattr(hmm, 'observe') else max(1, round(release * fe.FPS))
+            quiet = chord_release or 0                        # with a release time, start silent until someone sings
+            every = getattr(self.a, 'checkpoint', 10.0)
+            if every > 0:
+                threading.Thread(target=self.checkpoint, args=(started, cpu_start, every), daemon=True).start()
             while not self.stop.is_set():
                 try:
                     item = self.outputs.get(timeout=.2)
@@ -287,7 +355,7 @@ class LiveRun:
                     continue
                 if item is None:
                     break
-                index, melody, db, voiced = item
+                index, melody, db, voiced, bands = item
                 if previous is not None and index != previous + 1:
                     self.metrics['duplicate_frames'] += int(index <= previous)
                     raise RuntimeError('Missing or repeated selector frame')
@@ -303,8 +371,12 @@ class LiveRun:
                 self.metrics['output_lateness_seconds'].append(lateness)
                 if hasattr(sink, 'set_time'):
                     sink.set_time(audio_end + self.a.playout_delay)
+                if hasattr(hmm, 'observe'):
+                    hmm.observe(bands, voiced)
                 state, post = hmm.step(melody, None, onset=True)
-                render.step(hmm.pcs(state), root_pc=int(hmm.em.T[state].argmax()),
+                quiet = 0 if voiced else quiet + 1
+                pcs = None if chord_release and quiet >= chord_release else hmm.pcs(state)
+                render.step(pcs, root_pc=int(hmm.em.T[state].argmax()),
                             confidence=float(post[state]), level_db=db)
                 self.metrics['output_latency_seconds'].append(time.perf_counter() - (self.epoch + audio_end))
                 self.metrics['delivered_frames'] += 1
@@ -318,34 +390,90 @@ class LiveRun:
             self.metrics.update(completed=False, error=f'{type(error).__name__}: {error}')
             raise
         finally:
+            self.stopped_at = self.stopped_at or time.perf_counter()
             self.stop.set()
             with self.cv:
                 self.cv.notify_all()
-            for thread in (capture, inference):
-                if thread:
-                    thread.join(timeout=12)
-            if render:
-                render.all_off()
-            if isinstance(sink, rd.PrintSink):
-                self.metrics['note_ons'] = sum(e[0] == 'on' for e in sink.events)
-            if sink and hasattr(sink, 'close'):
-                self.metrics['rendered_file'] = str(sink.close())
-            if isinstance(sink, rd.MidiSink):
-                sink.out.close()
-            if client:
-                client.close()
-            self.metrics['wall_seconds'] = time.perf_counter() - started
-            self.metrics['host_cpu_seconds'] = time.process_time() - cpu_start
-            # ru_maxrss is bytes on macOS, KiB on Linux.
-            self.metrics['host_peak_rss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == 'darwin' else 1024)
-            if self.epoch is not None:
-                self.metrics['trailing_frames_without_full_update'] = self.total - (self.metrics['windows'][-1]['end_frame_exclusive'] if self.metrics['windows'] else self.metrics['delivered_frames'])
-            for name in ('frontend_seconds', 'output_latency_seconds', 'output_lateness_seconds'):
-                self.metrics[name + '_summary'] = summary(self.metrics.pop(name))
-            self.a.metrics.parent.mkdir(parents=True, exist_ok=True)
-            self.a.metrics.write_text(json.dumps(self.metrics, indent=2) + '\n')
+            done = self.metrics.setdefault('shutdown', {})
+
+            def step(name, action):
+                """Each step runs even if an earlier one failed or a signal arrived during it."""
+                try:
+                    action()
+                    done[name] = 'ok'
+                except BaseException as error:
+                    done[name] = f'{type(error).__name__}: {error}'
+
+            def notes_off():
+                if render:
+                    render.all_off()
+                if hasattr(sink, 'all_notes_off'):
+                    sink.all_notes_off()
+                elif isinstance(sink, rd.MidiSink):
+                    sink.control(0, 123, 0)                   # MIDI "all notes off", whatever the renderer believes
+                done['notes_off_seconds_after_stop'] = round(time.perf_counter() - self.stopped_at, 3)
+
+            def close_sink():
+                if isinstance(sink, rd.PrintSink):
+                    self.metrics['note_ons'] = sum(e[0] == 'on' for e in sink.events)
+                if sink and hasattr(sink, 'close'):
+                    self.metrics['rendered_file'] = str(sink.close())
+                if isinstance(sink, rd.MidiSink):
+                    sink.out.close()
+
+            step('notes_off', notes_off)                      # first: no sound while the rest shuts down
+            step('metrics_before_worker_close', lambda: self.write_metrics(started, cpu_start))
+            step('threads', lambda: [t.join(timeout=12) for t in (capture, inference) if t])
+            step('sink', close_sink)
+            step('worker', lambda: client.close() if client else None)
+            done['metrics'] = 'ok'                             # the file cannot record its own write afterwards
+            step('metrics', lambda: self.write_metrics(started, cpu_start, final=True))
             print(f'Metrics: {self.a.metrics}', flush=True)
 
+    def snapshot(self, started, cpu_start):
+        """The metrics as they would be written now; the running lists stay as they are."""
+        for _ in range(5):
+            try:
+                m = dict(self.metrics)
+                break
+            except RuntimeError:                              # a key was added by another thread; look again
+                continue
+        m['windows'] = list(m.get('windows', []))
+        m['wall_seconds'] = time.perf_counter() - started
+        m['host_cpu_seconds'] = time.process_time() - cpu_start
+        # ru_maxrss is bytes on macOS, KiB on Linux.
+        m['host_peak_rss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == 'darwin' else 1024)
+        if self.epoch is not None:
+            m['trailing_frames_without_full_update'] = self.total - (m['windows'][-1]['end_frame_exclusive'] if m['windows'] else m['delivered_frames'])
+        for name in ('frontend_seconds', 'output_latency_seconds', 'output_lateness_seconds'):
+            if name in m:
+                m[name + '_summary'] = summary(list(m.pop(name)))
+        return m
+
+    def write_metrics(self, started, cpu_start, final=False, partial=False):
+        """Write to a temporary name and rename, so the file is never half-written."""
+        path = Path(self.a.metrics)
+        target = path.with_name(path.name + '.partial') if partial else path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        m = self.snapshot(started, cpu_start)
+        if partial:
+            m['partial'] = True
+        temporary = target.with_name(target.name + '.tmp')
+        temporary.write_text(json.dumps(m, indent=2) + '\n')
+        os.replace(temporary, target)
+        if final:
+            for name in ('frontend_seconds', 'output_latency_seconds', 'output_lateness_seconds'):
+                if name in self.metrics:
+                    self.metrics[name + '_summary'] = summary(self.metrics.pop(name))
+            path.with_name(path.name + '.partial').unlink(missing_ok=True)
+
+    def checkpoint(self, started, cpu_start, every=10.0):
+        """While running, keep a partial metrics file at most `every` seconds old."""
+        while not self.stop.wait(every):
+            try:
+                self.write_metrics(started, cpu_start, partial=True)
+            except Exception as error:
+                print(f'Metrics checkpoint failed: {error}', file=sys.stderr, flush=True)
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -356,14 +484,25 @@ def main():
     ap.add_argument('--playout-delay', type=float, default=1.0, help='Seconds after frame-end audio timestamp')
     ap.add_argument('--duration', type=float)
     ap.add_argument('--sink', default='print')
-    ap.add_argument('--selector', choices=['key', 'song', 'score'], default='score')
+    ap.add_argument('--selector', choices=['key', 'song', 'score', 'pitch'], default='score',
+                    help="'pitch' plays the sung note itself; the others accompany with chords")
+    ap.add_argument('--release', type=float, default=None,
+                    help='seconds without voice before the sound stops (pitch: default 0.4; chord selectors: off unless given)')
+    ap.add_argument('--smooth', type=int, default=12, help='pitch: frames (16 ms each) averaged before deciding')
+    ap.add_argument('--model', default=None, help=f'chip: imported model under data/runs/<name>_talamo (default {DEFAULT_MODEL})')
+    ap.add_argument('--banner', action='store_true', help='chip: use the application that shows a fixed text on the EVK display')
+    ap.add_argument('--checkpoint', type=float, default=10.0, help='seconds between partial metrics files; 0 turns them off')
+    ap.add_argument('--window-timeout', type=float, default=3.0, help='chip: seconds to wait for one window before stopping')
+    ap.add_argument('--start-attempts', type=int, default=3, help='chip: board starts tried when the handshake fails')
     ap.add_argument('--bpm', type=float, default=80)
     ap.add_argument('--verify-reference', action='store_true')
     ap.add_argument('--worker-debug', action='store_true')
     ap.add_argument('--metrics', type=Path, default=ROOT / 'data/live_chip/latest.json')
     a = ap.parse_args()
-    if not .5 <= a.period <= 1 or a.playout_delay < a.period + .4:
-        ap.error('Use period 0.5..1 s and playout-delay >= period + 0.4 s')
+    if a.mode == 'chip' and (not .5 <= a.period <= 1 or a.playout_delay < a.period + .4):
+        ap.error('Chip mode: use period 0.5..1 s and playout-delay >= period + 0.4 s')
+    if a.playout_delay < .05:
+        ap.error('Use playout-delay >= 0.05 s')
     def stop(*_):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, stop)

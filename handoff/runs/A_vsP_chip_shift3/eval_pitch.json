@@ -1,0 +1,31 @@
+{
+ "sets": {
+  "vs_songs": {
+   "pitch_acc": 0.577,
+   "chord_out_rate": 0.0
+  },
+  "vs_exer": {
+   "pitch_acc": 0.591,
+   "chord_out_rate": 0.0
+  },
+  "damp250": {
+   "pitch_acc": 0.378,
+   "chord_out_rate": 0.0
+  }
+ },
+ "rules": "chip",
+ "chip": {
+  "vs_songs": {
+   "pitch_acc": 0.577,
+   "chord_out_rate": 0.0
+  },
+  "vs_exer": {
+   "pitch_acc": 0.591,
+   "chord_out_rate": 0.0
+  },
+  "damp250": {
+   "pitch_acc": 0.378,
+   "chord_out_rate": 0.0
+  }
+ }
+}

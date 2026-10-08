@@ -1,0 +1,6 @@
+config KERNEL_SA_BANNER
+    bool "Sing-along display banner (pass-through)"
+    default n
+    select SPIM
+    select GPIO
+    select SDMA

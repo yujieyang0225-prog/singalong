@@ -1,0 +1,2 @@
+[top]
+sed_deps = /usr/local/lib/python3.12/site-packages/talamo/pipeline/embedded/submodules/bsp

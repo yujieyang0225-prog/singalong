@@ -1,0 +1,13 @@
+{
+ "tested_on": "physical Pulsar C1",
+ "requested_calls": 60,
+ "completed_calls": 60,
+ "exact_calls": 60,
+ "error": null,
+ "boot_seconds": 5.94,
+ "wall_seconds": 29.2,
+ "call_seconds": {
+  "median": 0.352,
+  "max": 0.415
+ }
+}

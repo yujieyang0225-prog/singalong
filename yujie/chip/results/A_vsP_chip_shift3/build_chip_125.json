@@ -1,0 +1,55 @@
+{
+ "run": "A_vsP_chip_shift3_talamo",
+ "frames": 125,
+ "clock_mhz": 100,
+ "network": [
+  48,
+  80,
+  24
+ ],
+ "recurrent": true,
+ "software_equals_reference": true,
+ "example_output_spikes": 94,
+ "generated": true,
+ "built": true,
+ "generated_config": {
+  "PIPELINE_CONFIG_TOTAL_NUM_NODES": 5,
+  "PIPELINE_CONFIG_KERNEL_SNN_NUM_OUTPUT_NEURONS": 24,
+  "PIPELINE_CONFIG_KERNEL_SNN_NUM_INPUT_NEURONS": 48,
+  "PIPELINE_CONFIG_KERNEL_MAX_INPUT_SIZE": 48,
+  "PIPELINE_CONFIG_KERNEL_MAX_NUM_INPUT_WORDS": 48,
+  "PIPELINE_CONFIG_KERNEL_SNN_INPUT_OFFSET": 0,
+  "PIPELINE_CONFIG_KERNEL_SNN_NUM_INPUT_WORDS": 48,
+  "PIPELINE_CONFIG_KERNEL_OUTPUT_INFERENCE_SIZE": 48,
+  "PIPELINE_CONFIG_KERNEL_SNN_MAPPING_BUFFER_SIZE": 2304,
+  "PIPELINE_CONFIG_KERNEL_NUM_OUTPUT_BITMAPS": 1,
+  "PIPELINE_CONFIG_KERNEL_USED_TIMER": 0,
+  "PIPELINE_CONFIG_KERNEL_DELAY": 1,
+  "PIPELINE_CONFIG_SNN_SLIDING_WINDOW_SIZE": 1,
+  "PIPELINE_CONFIG_SNN_SLIDING_WINDOW_STEP": 1,
+  "PIPELINE_CONFIG_SNN_SLIDING_WINDOW_FRAME": 1,
+  "PIPELINE_CONFIG_KERNEL_TC_BLOCK0_NUM_INPUT_WORDS": 0,
+  "PIPELINE_CONFIG_KERNEL_HOST_INPUT_BUFFER_SIZE": 10240,
+  "PIPELINE_CONFIG_KERNEL_HOST_INPUT_NUMSLOTS": 1,
+  "PIPELINE_CONFIG_KERNEL_HOST_INPUT_NUM_BUFFERS": 1,
+  "PIPELINE_CONFIG_KERNEL_HOST_OUTPUT_BUFFER_SIZE": 10240,
+  "PIPELINE_CONFIG_KERNEL_HOST_OUTPUT_NUMSLOTS": 1,
+  "PIPELINE_CONFIG_KERNEL_HOST_OUTPUT_NUM_BUFFERS": 1
+ },
+ "kernels": [
+  "hostinput",
+  "hostoutput",
+  "ping",
+  "reset_internal_state",
+  "snn_c1_digital_ifenc"
+ ],
+ "snn_kernel_params": {
+  "fire_count": "1",
+  "auto_reset": "0",
+  "num_frames": "125"
+ },
+ "ram_bytes": 91360,
+ "ram_region_kb": 384,
+ "ram_percent": 23.23,
+ "boot_image_bytes": 60664
+}

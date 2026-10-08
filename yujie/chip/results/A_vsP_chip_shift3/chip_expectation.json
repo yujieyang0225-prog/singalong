@@ -1,0 +1,35 @@
+{
+ "run": "A_vsP_chip_shift3",
+ "crops": {
+  "vs_songs": 427,
+  "vs_exer": 512,
+  "damp250": 512
+ },
+ "pitch_accuracy": {
+  "TRAINED (torchsnn rules)": {
+   "vs_songs": 0.593,
+   "vs_exer": 0.619,
+   "damp250": 0.375
+  },
+  "recurrent as on chip, no layer delay": {
+   "vs_songs": 0.595,
+   "vs_exer": 0.604,
+   "damp250": 0.383
+  },
+  "CHIP, scored as it arrives (one frame late)": {
+   "vs_songs": 0.577,
+   "vs_exer": 0.591,
+   "damp250": 0.378
+  },
+  "CHIP, labels shifted by the one-frame delay": {
+   "vs_songs": 0.587,
+   "vs_exer": 0.597,
+   "damp250": 0.381
+  },
+  "snn_numpy.py default (encoder reset 'subtract')": {
+   "vs_songs": 0.581,
+   "vs_exer": 0.618,
+   "damp250": 0.384
+  }
+ }
+}

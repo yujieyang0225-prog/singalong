@@ -1,0 +1,16 @@
+{
+ "app": "app_hostfed_125_banner",
+ "software_equals_reference": true,
+ "text": "SING-ALONG SNN\nNeuroTUM\n\nPitch network\nrunning on\nPulsar C1",
+ "kernels": [
+  "hostinput",
+  "hostoutput",
+  "ping",
+  "reset_internal_state",
+  "sa_banner",
+  "snn_c1_digital_ifenc"
+ ],
+ "ram_bytes": 100640,
+ "ram_percent": 25.59,
+ "boot_image_bytes": 68576
+}

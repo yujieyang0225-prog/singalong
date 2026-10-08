@@ -1,0 +1,1 @@
+MYAPPINCLUDE += -I$(dir $(realpath $(lastword $(MAKEFILE_LIST))))/include

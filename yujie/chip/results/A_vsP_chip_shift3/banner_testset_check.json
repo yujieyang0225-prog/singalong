@@ -1,0 +1,57 @@
+{
+ "tested_on": "physical Pulsar C1",
+ "app": "app_hostfed_125_banner",
+ "application_boots": 1,
+ "path": "one boot, one window per call (the live loop's path)",
+ "windows_per_set": 512,
+ "sets": {
+  "vs_songs": {
+   "windows": 427,
+   "windows_identical_to_reference": 427,
+   "spikes_board": 26267,
+   "spikes_reference": 26267,
+   "chord_outputs_silent_on_board": true,
+   "pitch_accuracy": {
+    "board": 0.577,
+    "reference_chip_rules": 0.577,
+    "reference_as_trained": 0.593
+   }
+  },
+  "vs_exer": {
+   "windows": 512,
+   "windows_identical_to_reference": 512,
+   "spikes_board": 27079,
+   "spikes_reference": 27079,
+   "chord_outputs_silent_on_board": true,
+   "pitch_accuracy": {
+    "board": 0.591,
+    "reference_chip_rules": 0.591,
+    "reference_as_trained": 0.619
+   }
+  },
+  "damp250": {
+   "windows": 512,
+   "windows_identical_to_reference": 512,
+   "spikes_board": 37997,
+   "spikes_reference": 37997,
+   "chord_outputs_silent_on_board": true,
+   "pitch_accuracy": {
+    "board": 0.378,
+    "reference_chip_rules": 0.378,
+    "reference_as_trained": 0.375
+   }
+  }
+ },
+ "boot_seconds": 6.62,
+ "complete": true,
+ "comm_debug_logs": true,
+ "total_windows": 1451,
+ "total_identical": 1451,
+ "wall_seconds": 546.6,
+ "call_seconds": {
+  "first": 0.433,
+  "median": 0.366,
+  "p95": 0.388,
+  "max": 0.554
+ }
+}

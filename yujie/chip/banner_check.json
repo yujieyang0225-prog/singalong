@@ -1,0 +1,13 @@
+{
+ "tested_on": "physical Pulsar C1",
+ "app": "app_hostfed_125_banner",
+ "calls": 300,
+ "exact": 300,
+ "error": null,
+ "boot_seconds": 6.625,
+ "call_seconds": {
+  "first": 0.466,
+  "median": 0.366,
+  "max": 0.42
+ }
+}

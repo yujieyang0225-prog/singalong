@@ -9,7 +9,6 @@ import threading
 import time
 import warnings
 import sys
-import os
 
 import numpy as np
 import torch
@@ -18,6 +17,7 @@ import talamo
 import build_chip
 from singalong import data
 from transport_events import TrackedEvents
+import board_lock
 
 
 class PersistentBoard:
@@ -54,15 +54,15 @@ class PersistentBoard:
         self.assembled = self.pipe._assemble_embedded_pipeline(example)
         stack = ExitStack()
         try:
+            # Before anything reaches the board; released when the session closes or fails to open.
+            stack.callback(board_lock.release, board_lock.acquire('persistent board session'))
             t = time.perf_counter()
             self.connection = stack.enter_context(self.soc.get_board_connection())
             self.connection.boot_application(str(self.app))
             self.boot_seconds = time.perf_counter() - t
             # Keep Talamo's single native connection, but account for every
             # async request across the fresh per-call MocktcpManager objects.
-            transport_started = time.perf_counter()
             native = self.connection.get_mocktcp(sys.stdout)
-            self.transport_setup_seconds = time.perf_counter() - transport_started
             self.connection._mocktcp_connection = TrackedEvents(native)
             stack.enter_context(self.assembled._configure_embedded_application_board_connection(self.connection))
         except BaseException:
@@ -105,11 +105,3 @@ class PersistentBoard:
         if self.stack is not None:
             self.stack.__exit__(*exc)
             self.stack = None
-
-    def transport_stats(self):
-        """Diagnostics for the Linux SDK worker; keep native/private access here."""
-        transport = self.connection._mocktcp_connection
-        return dict(worker_open_fds=len(os.listdir('/proc/self/fd')),
-                    pending_events=len(transport.pending),
-                    drained_events=transport.drained_total,
-                    max_event_id=transport.max_event_id)

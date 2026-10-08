@@ -1,0 +1,48 @@
+{
+  "mode": "baseline",
+  "source": "mic:1",
+  "period_seconds": 0.5,
+  "worker_debug": false,
+  "playout_delay_seconds": 1.0,
+  "windows": [],
+  "capture_status": [],
+  "skipped_updates": 0,
+  "startup_frames_omitted": 0,
+  "duplicate_frames": 0,
+  "captured_frames": 18747,
+  "delivered_frames": 18747,
+  "late_outputs": 5,
+  "queue_peak": 63,
+  "connection_failures": 0,
+  "recoveries": 0,
+  "feature_nonzero_frames": 4143,
+  "pcm_peak": 1.0191268920898438,
+  "pcm_clipped_samples": 1,
+  "audio_device": "{'name': 'MacBook Pro Microphone', 'index': 1, 'hostapi': 0, 'max_input_channels': 1, 'max_output_channels': 0, 'default_low_input_latency': 0.033242630385487526, 'default_low_output_latency': 0.01, 'default_high_input_latency': 0.043401360544217685, 'default_high_output_latency': 0.1, 'default_samplerate': 44100.0}",
+  "input_latency_seconds": 0.231625,
+  "sample_rate": 16000.0,
+  "completed": true,
+  "rendered_file": "Python synth -> MacBook Pro Speakers (peak 0.18, 300.9 s played)",
+  "wall_seconds": 301.6636197500047,
+  "host_cpu_seconds": 82.446487,
+  "host_peak_rss_bytes": 63733760,
+  "trailing_frames_without_full_update": 0,
+  "frontend_seconds_summary": {
+    "min": 1.1459022061899304e-05,
+    "median": 0.0002780419890768826,
+    "p95": 0.0012753501519910057,
+    "max": 0.08677970798453316
+  },
+  "output_latency_seconds_summary": {
+    "min": 1.0007188329764176,
+    "median": 1.0050884169759229,
+    "p95": 1.0103888418787392,
+    "max": 1.091394582996145
+  },
+  "output_lateness_seconds_summary": {
+    "min": 2.695797593332827e-05,
+    "median": 0.0024221669882535934,
+    "p95": 0.005277254496468234,
+    "max": 0.07540479197632521
+  }
+}
