@@ -11,8 +11,16 @@ sim_check.py / deploy_live.py work unchanged. With --check, run both implementat
 singalong.snn_numpy) on 1 s of a validation recording and report the spike agreement, like sim_check does
 for PyTorch vs the simulator.
 
-UNTESTED in this session (no SDK here). If a parameter name does not match, run export_npz.py --list on any
-Talamo run to see the real names and adjust export_npz.MAP.
+Fixed 2026-10-08 (yujie/chip/TRAINING_FEEDBACK.md has the measurements). Before, the imported pipeline ran random weights:
+  - the values were copied into the live tensors only; pipe(...) and the saved file use the stored parameter
+    set, so they are now written back with step.save_params() inside the quantized context;
+  - quantize() leaves the IF encoder multiplying its input by 2**7 with a threshold scaled to match; the trained
+    thresholds are in unscaled units, so the multiplier is reset to 2**0 (sign +1, bias 0);
+  - W_rec is square, so the shape test never transposed it; torch stores [to, from], Talamo [from, to].
+--check now compares pipe(...) with yujie/chip/chipref.py under the chip's rules and scores spike positions.
+
+If a parameter name does not match, run export_npz.py --list on any Talamo run to see the real names and adjust
+export_npz.MAP.
 """
 import argparse
 import ast
@@ -24,6 +32,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import talamo  # noqa: E402
 from singalong import data, model  # noqa: E402
 from Pulsar.IF_DNR.export_npz import MAP  # noqa: E402
 
@@ -52,7 +61,9 @@ def main():
         ref = refs[cands[0]]
         cur = ref.get_value().detach()
         val = torch.tensor(w[key], dtype=cur.dtype)
-        if val.shape != cur.shape:
+        if key == "W_rec":
+            val = val.T                                        # square: must be transposed explicitly
+        elif val.shape != cur.shape:
             if val.T.shape == cur.shape:
                 val = val.T
             elif val.numel() == 1:
@@ -63,6 +74,15 @@ def main():
         with torch.no_grad():
             ref.get_value().copy_(val)
         print(f"{key:14s} -> {cands[0]} {tuple(cur.shape)}")
+    # The encoder computes floor(x * 2**weight) * sign + bias; the trained thresholds assume 2**0, +1, 0.
+    for name, value in (("weight", 0.0), ("weight_sign", 1.0), ("bias", 0.0)):
+        ref = next(r for n, r in refs.items() if "encoder" in n and n.endswith("." + name))
+        with torch.no_grad():
+            ref.get_value().fill_(value)
+    # Store the tensors in the pipeline's parameter set: pipe(...) and save() read that, not the live tensors.
+    with pipe.trainable_params.quantized_context():
+        for step in pipe.filter_steps(talamo.pipeline.elements.PipelineStep):
+            step.save_params(pipe.trainable_params)
     a.out.mkdir(parents=True, exist_ok=True)
     pipe.trainable_params.save(str(a.out / "trainable_params_quantized.json"))
     pipe.trainable_params.save(str(a.out / "trainable_params.json"))
@@ -72,20 +92,33 @@ def main():
     print(f"-> {a.out}")
 
     if a.check:
-        from singalong.snn_numpy import C1Net
-        recs = data.load_recordings("val", data=a.check)
-        X = recs[0]["X"][600:1200]                                   # ~10 s
-        tal = model.predict(pipe, torch.tensor(X[None]), n_label_ch=14)          # rates [1,T,O]
-        s_tal = pipe(data.dense_dataset(torch.tensor(X[None]), torch.zeros(1, len(X), 14))).data_as_numpy()[0, 1:]
-        s_np = C1Net(a.npz).run(X)
-        agree = (s_tal == s_np).mean()
-        print(f"Talamo software vs numpy reference: spike agreement {agree:.3f} over {s_np.shape}; "
-              f"spikes {int(s_tal.sum())} vs {int(s_np.sum())}")
-        for delay in (0, 1):
-            s_np2 = C1Net(a.npz, layer_delay=delay).run(X)
-            for enc in ("subtract", "zero"):
-                s3 = C1Net(a.npz, layer_delay=delay, enc_reset=enc).run(X)
-                print(f"  layer_delay={delay} enc_reset={enc}: agreement {(s_tal == s3).mean():.3f}")
+        sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "yujie" / "chip"))
+        import chipref
+        recs = sorted(data.load_recordings("val", data=a.check), key=lambda r: -len(r["X"]))
+        X = recs[0]["X"]
+        X = X[600:1200] if len(X) >= 1200 else X[:600]              # ~10 s, or the start of a short recording
+        ds = data.dense_dataset(torch.tensor(X[None]), torch.zeros(1, len(X), 14))
+        s_tal = pipe(ds).data_as_numpy()[0][:len(X)]                  # the Snn appends one frame; chip rules include the delay
+        steps = list(pipe.filter_steps(talamo.pipeline.elements.PipelineStep))[0](ds).data_as_numpy()[0][:len(X)]
+        reloaded, _ = model.build_pipeline(cfg["hidden"], recurrent=cfg["recurrent"], out_neurons=cfg["out"],
+                                           enc_threshold=float(np.median(w["enc_threshold"])))
+        reloaded.trainable_params.load(str(a.out / "trainable_params_quantized.json"))
+        s_file = reloaded(ds).data_as_numpy()[0][:len(X)]
+        s_chip = chipref.run(w, X, **chipref.CHIP)
+        s_trained = chipref.run(w, X, **chipref.TRAINED)
+
+        def f1(p, q):
+            p, q = p.astype(bool), q.astype(bool)
+            return 2 * (p & q).sum() / max(1, p.sum() + q.sum())
+        print(f"check on {recs[0]['id']}, {len(X)} frames x {s_tal.shape[1]} outputs (spike-position F1; 1.000 = identical)")
+        print(f"  pipe(...)               {int(s_tal.sum()):5d} spikes")
+        print(f"  steps called directly   {int(steps.sum()):5d} spikes, F1 {f1(s_tal, steps):.3f}")
+        print(f"  saved file, reloaded    {int(s_file.sum()):5d} spikes, F1 {f1(s_tal, s_file):.3f}")
+        print(f"  reference, chip rules   {int(s_chip.sum()):5d} spikes, F1 {f1(s_tal, s_chip):.3f}")
+        print(f"  reference, as trained   {int(s_trained.sum()):5d} spikes, F1 {f1(s_tal, s_trained):.3f}  (differs by design, see TRAINING_FEEDBACK.md)")
+        if not (np.array_equal(s_tal, steps) and np.array_equal(s_tal, s_file) and np.array_equal(s_tal, s_chip)):
+            sys.exit("IMPORT CHECK FAILED: the pipeline does not reproduce the reference under the chip's rules")
+        print("IMPORT CHECK PASSED")
 
 
 if __name__ == "__main__":

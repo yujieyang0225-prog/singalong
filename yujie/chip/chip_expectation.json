@@ -1,0 +1,35 @@
+{
+ "run": "A_vocalset_P",
+ "crops": {
+  "vs_songs": 427,
+  "vs_exer": 512,
+  "damp250": 512
+ },
+ "pitch_accuracy": {
+  "TRAINED (torchsnn rules)": {
+   "vs_songs": 0.53,
+   "vs_exer": 0.599,
+   "damp250": 0.364
+  },
+  "recurrent as on chip, no layer delay": {
+   "vs_songs": 0.532,
+   "vs_exer": 0.601,
+   "damp250": 0.368
+  },
+  "CHIP, scored as it arrives (one frame late)": {
+   "vs_songs": 0.516,
+   "vs_exer": 0.589,
+   "damp250": 0.364
+  },
+  "CHIP, labels shifted by the one-frame delay": {
+   "vs_songs": 0.524,
+   "vs_exer": 0.596,
+   "damp250": 0.366
+  },
+  "snn_numpy.py default (encoder reset 'subtract')": {
+   "vs_songs": 0.549,
+   "vs_exer": 0.581,
+   "damp250": 0.367
+  }
+ }
+}
