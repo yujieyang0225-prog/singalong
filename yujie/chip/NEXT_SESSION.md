@@ -1,6 +1,6 @@
 # Start here: handoff for the sing-along chip work
 
-Snapshot of 2026-10-08, 23:40. The pitch is on Friday 9 October, 10:00.
+Snapshot of 2026-10-09, 01:30. The pitch is on Friday 9 October, 10:00.
 Paths are relative to `~/TUM/NeuroTUM/agent-pitch-handoff` unless they start with `/workspace` (inside a
 container). Details live in `yujie/chip/LIVE_CHIP.md` (options, timing), `HARDWARE_BENCHMARK.md` (figures
 for the presentation), `TRAINING_FEEDBACK.md` (for the training team) and `PROCESS.md` (history, mistakes).
@@ -43,6 +43,7 @@ Baseline mode (`--mode baseline`) uses the laptop's own pitch estimate and no bo
 | 4.5 Hardware benchmark | written: `HARDWARE_BENCHMARK.md` |
 | 5. Text on the board's display (`--banner`) | passed; the whole test set on one boot, 1,451 of 1,451; the user saw the text |
 | 6. Slow-round-trip limit (`--slow-limit`, default 3) | passed: 26 of 26 software tests; board recording check with the default, 46 of 46 exact, no late frames; three microphone runs with `--slow-limit 6`, longest streak 2, so the limit itself was never reached on the board |
+| 7. Live page in the look of the slide deck, with a piano roll (`live_view.py`) | passed in software and on the board with recordings: 44 of 44 software tests; recording through the chip with the page open, 46 of 46 exact, no late frame; nobody has judged the page by eye on a projector, and it has not run with the microphone on the chip (issue 13) |
 
 Also done: direct note tracking (`--selector pitch`), the built-in synth (`--sink synth`), the live page
 (`live_view.py`), automatic clear-and-retry at start-up (`--start-attempts`), and the fix of the old
@@ -52,14 +53,25 @@ Also done: direct note tracking (`--selector pitch`), the built-in synth (`--sin
 
 - Branch `yujie/singalong-chip`, remote `nc-fortiss/MNH26SVR`. The remote is at `50ea178`
   (`1886d62` code and results, `50ea178` docs), the last state that was pushed.
-- **Two local commits on top of it, not pushed:** first the `--slow-limit` option with its software tests
-  (`live_chip.py`, `fake_worker.py`, `test_slow_round_trips.py`), then the documentation (`LIVE_CHIP.md`,
-  this file). `git log --oneline -3` shows them. Pushing needs the user's permission.
-- **What the code commit changes:** `--slow-limit N` with default 3, two counters in the metrics
+- **Five local commits on top of it, not pushed.** Pushing needs the user's permission.
+
+| Commit | What it holds |
+| --- | --- |
+| `ed75474` | the `--slow-limit` option with its software tests (`live_chip.py`, `fake_worker.py`, `test_slow_round_trips.py`) |
+| `7a6791d` | documentation of it, the timestamp drift and the Bluetooth findings |
+| `beff077` | the new live page and its tests (`live_view.py`, `test_live_view.py`) |
+| `c3f026d` | documentation of the page (`LIVE_CHIP.md`, "What the page shows") |
+| the newest | this file, brought up to date |
+
+- **What `ed75474` changes:** `--slow-limit N` with default 3, two counters in the metrics
   (`slow_round_trips`, `longest_slow_streak`), and the error text, which now names the count
   ("3 consecutive round trips exceeded update period"). Without the option the stop rule is the old one.
+- **What `beff077` changes:** only `live_view.py`, the page and what it is given to draw. The loop, the
+  tracker, the synth and everything that talks to the board are untouched. `/state` kept every earlier key
+  and gained `timeline`, `raw`, `decoder`, `model` and `latency.slow`.
 - **Uncommitted on purpose:** `yujie/chip/results/live_2026-10-08/presentation_rehearsal.json`, the metrics
-  of the rehearsal that stopped. The user keeps it local.
+  of the rehearsal that stopped, and `yujie/chip/UI_REDESIGN_PLAN.md`, the plan the page was built from.
+  The user keeps both local. The plan predates two later decisions (section 6), so the page differs from it.
 
 ## 4. The demo command and its safety settings
 
@@ -83,6 +95,9 @@ shutdown. With `--duration 180` a run stops by itself after 180 s of audio.
 - **Sound output**: the Mac's default output at the moment of starting. Check it just before starting:
   macOS switches to a Bluetooth device by itself when it reconnects. Do not use a Bluetooth output
   (issue 11). Measured so far: the built-in speakers and one Bluetooth device, nothing else.
+- **The page**: what each part shows is in `LIVE_CHIP.md`, "What the page shows". Only a running loop
+  shows live values; "Not connected" means the program is not running. It is built for 1280 x 720 and
+  scales with the window like a slide, so give it a wide window.
 - **Laptop-only fallback**, no board, note after about 0.1 s:
 
 ```bash
@@ -115,7 +130,7 @@ The display text stays until the board is power-cycled, also in baseline mode.
 8. **`board_check.py --banner`** fails in its own clear-and-reboot; use `check_banner.py --testset` for the
    banner application.
 9. **MacBook input volume** was at 43 of 100 in the last run and the level was low.
-10. A comment at the top of `live_view.py` still shows an old example command.
+10. Fixed on 2026-10-09: the comment at the top of `live_view.py` now shows the demo command.
 11. **Microphone timestamp drift, unresolved and not investigated.** In microphone runs the frames reach
     the loop later and later than their timestamps, which uses up the margin of the playout delay: frames
     are late from a drift of about 0.43 s. Measured in minute 3: 0.24 s on the audible built-in speakers
@@ -125,6 +140,16 @@ The display text stays until the board is power-cycled, also in baseline mode.
     zero. Table and details: `LIVE_CHIP.md`, "Microphone timestamp drift".
 12. **Ctrl-C did not reach one run** (macOS Terminal window, cause unknown). SIGTERM stopped it cleanly in
     9 s; see section 4.
+13. **The new page is checked with recordings only.** Open points:
+    - It has not run with the microphone on the chip, and nobody has judged it by eye on a projector.
+    - In laptop-only 60 s runs it cost no late frame (0 of 3,747 with the page open and without). One 20 s
+      run had 2 late frames while a headless Chrome was starting for a screenshot; the cause is not
+      established. In a microphone run late frames come from issue 11 in any case.
+    - The pitch range of the piano roll follows the notes shown, so the picture rescales when a higher or
+      lower note appears.
+    - At the end of a recording the status reads "No chip result for 2 s" for about a second before
+      "Stopped". The old page did the same.
+    - After a stop the footer keeps the last run's figures.
 
 ## 6. Next task, pending approvals, restrictions
 
@@ -134,9 +159,10 @@ or tests, no board access, no retraining, no change to the banner application, n
 
 Decisions waiting for the user:
 
-1. **Push** of the two local commits (section 3). Not approved.
+1. **Push** of the five local commits (section 3). Not approved.
 2. **Sound output for the pitch.** Bluetooth is out by the numbers of issue 11. Whichever output is chosen
-   needs one 3-minute run with the demo command first.
+   needs one 3-minute run with the demo command first. That run is also the first of the new page with
+   the microphone on the chip, and the user's chance to say whether it is readable (issue 13).
 3. **Sustained monophonic synth.** A read-only feasibility report was delivered. Findings: sustaining
    without retriggering, release on silence and a simple additive timbre already exist; the gap is note
    stability. Recommendation: expose the pitch tracker's existing confirmation time, minimum note length and
@@ -145,12 +171,17 @@ Decisions waiting for the user:
    delay on note changes: 150 to 250 ms. Proposed checks: host-only note-sequence tests, the generated tone
    file (known 2 s notes), one short board run, then live humming by the user. Awaiting approval.
 
-Decided by the user on 2026-10-08, do not reopen without asking:
+Decided by the user on 2026-10-08 and 09, do not reopen without asking:
 
 - No board test that pauses the worker (`kill -STOP`). It cannot tell limit 3 from limit 6 and adds a
   communication risk.
 - The drift of issue 11 is recorded only. No investigation and no change to the audio scheduling before
   the pitch.
+- The page keeps the microphone monitor as its own card (level, meter from -70 to 0 dB, "Voice detected" or
+  "Silence"), to tell sound reaching the laptop apart from the network recognising a pitch.
+- The timeline is a piano roll in the deck's light theme with rust-coloured notes. Its pitch range follows
+  the notes; no snapping to octaves.
+- `UI_REDESIGN_PLAN.md` stays local.
 
 **The user's working rules:**
 
@@ -169,15 +200,26 @@ Decided by the user on 2026-10-08, do not reopen without asking:
 
 **Software tests** (no board), from `yujie/chip` with `python`:
 `test_windowing.py`, `test_transport_events.py`, `test_worker_failure.py`, `test_shutdown.py`,
-`test_slow_round_trips.py`; in the container:
-`docker exec -w /workspace/yujie/chip singalong_sdk python3 test_board_lock.py`.
+`test_slow_round_trips.py`, `test_live_view.py`; in the container:
+`docker exec -w /workspace/yujie/chip singalong_sdk python3 test_board_lock.py`. Together 44 tests.
+
+**The page without the board, the microphone or sound** (from `agent-pitch-handoff`, then open
+http://127.0.0.1:8765):
+
+```bash
+python -u yujie/chip/live_view.py --source wav:data/live_chip/tones.wav --mode baseline --selector pitch --playout-delay 0.1 --sink print --duration 20
+```
+
+The file holds 2-second tones; the console and the piano roll show the notes 60, 64, 67, 69, 67, 64, 62, 60,
+64. It is git-ignored; `yujie/chip/make_test_audio.py data/live_chip/tones.wav --seconds 190` makes it.
 
 **Board checks:**
 
 ```bash
 # is anything using the board?
 docker exec singalong_sdk sh -c 'ps -eo pid,args | grep -E "[b]oard_worker|[c]heck_|[c]1util|[b]oard_check"'
-# whole loop on a recording, silent, every window compared (expect 46 of 46 exact, no late frames)
+# whole loop on a recording, silent, every window compared (expect 46 of 46 exact, no late frames);
+# with live_view.py in place of live_chip.py the same check also serves the page
 python -u yujie/chip/live_chip.py \
   --source "wav:Hackathon/08 Songs/sources/01_Happy_Birthday/audio/624721__asiilanna__happy-birthday.wav" \
   --mode chip --worker-debug --verify-reference --model A_vsP_chip_shift3 --banner --selector pitch \
