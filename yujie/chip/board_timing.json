@@ -1,0 +1,29 @@
+{
+ "calls": [
+  {
+   "windows": 1,
+   "seconds": 7.26,
+   "identical_to_reference": true
+  },
+  {
+   "windows": 6,
+   "seconds": 8.37,
+   "identical_to_reference": true
+  },
+  {
+   "windows": 21,
+   "seconds": 13.6,
+   "identical_to_reference": true
+  },
+  {
+   "windows": 41,
+   "seconds": 20.62,
+   "identical_to_reference": true
+  }
+ ],
+ "seconds_per_window": 0.339,
+ "fixed_seconds_per_call": 6.61,
+ "window_frames": 125,
+ "window_audio_seconds": 2.0,
+ "note": "one pipe() call boots the board, then sends the windows one after another; seconds_per_window is the slope over the number of windows"
+}

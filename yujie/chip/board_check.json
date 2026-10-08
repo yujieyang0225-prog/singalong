@@ -1,0 +1,59 @@
+{
+ "windows_per_set": 512,
+ "sets": {
+  "vs_songs": {
+   "windows": 427,
+   "seconds": 155.4,
+   "windows_identical_to_reference": 427,
+   "spikes_board": 28807,
+   "spikes_reference": 28807,
+   "spike_position_f1": 1.0,
+   "differing_entries_per_window": {
+    "mean": 0.0,
+    "max": 0
+   },
+   "chord_outputs_silent_on_board": true,
+   "pitch_accuracy": {
+    "board": 0.516,
+    "reference_chip_rules": 0.516,
+    "reference_as_trained": 0.53
+   }
+  },
+  "vs_exer": {
+   "windows": 512,
+   "seconds": 184.4,
+   "windows_identical_to_reference": 512,
+   "spikes_board": 29423,
+   "spikes_reference": 29423,
+   "spike_position_f1": 1.0,
+   "differing_entries_per_window": {
+    "mean": 0.0,
+    "max": 0
+   },
+   "chord_outputs_silent_on_board": true,
+   "pitch_accuracy": {
+    "board": 0.589,
+    "reference_chip_rules": 0.589,
+    "reference_as_trained": 0.599
+   }
+  },
+  "damp250": {
+   "windows": 512,
+   "seconds": 183.6,
+   "windows_identical_to_reference": 512,
+   "spikes_board": 42617,
+   "spikes_reference": 42617,
+   "spike_position_f1": 1.0,
+   "differing_entries_per_window": {
+    "mean": 0.0,
+    "max": 0
+   },
+   "chord_outputs_silent_on_board": true,
+   "pitch_accuracy": {
+    "board": 0.364,
+    "reference_chip_rules": 0.364,
+    "reference_as_trained": 0.364
+   }
+  }
+ }
+}

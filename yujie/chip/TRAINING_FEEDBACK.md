@@ -15,7 +15,8 @@ reference. Section 5 has the first board measurement.
 | Does Talamo's model then behave like the trained network? | Not spike for spike: two rules differ (below). **By decision these are kept as they are.** |
 | What do those differences cost? | About 1 point of pitch accuracy at most. No retraining is needed because of them. |
 | What should the next training session change? | Nothing is required. Section 4 lists what would make the model safer on the chip. |
-| Does the network fit and run on the real chip? | **Yes** (2026-10-08): it builds, the chip accepts it, and one 2 s window came back identical to the reference. |
+| Does the network fit and run on the real chip? | **Yes** (2026-10-08): it builds, the chip accepts it, and all 1,451 test windows came back identical to the reference. |
+| Is the chip fast enough for a live loop? | 0.34 s per 2 s window once booted, so about three updates per second. |
 
 ## 1. Accuracy to expect on the chip from the same weights
 
@@ -122,8 +123,19 @@ recurrent network, and returns the output spikes of every frame.
 | Largest fan-in | 128 (48 inputs + 80 recurrent), which is the limit the trainer's `fits_c1` assumes: **no headroom** |
 | Talamo's mapper | accepted it without a warning; serialized configuration 15,685 bytes |
 | Application RAM | 91,424 bytes of 384 KB (23 %) |
-| On the board, one 2 s window | **99 output spikes, every one in the same place as the reference** |
-| Time for that call | 7.2 s, almost all of it the boot; the per-window time is not measured yet |
+| Time on the board | **0.34 s per 2 s window**, plus 6.6 s once per call for the boot (`board_timing.json`) |
+
+**Board against the reference, whole handoff test set** (`yujie/chip/board_check.py`, `board_check.json`):
+
+| Test set | Windows | Identical to the reference | Spikes, board / reference | Pitch accuracy on the board | Reference, chip rules | As trained |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| VocalSet songs | 427 | 427 | 28,807 / 28,807 | **0.516** | 0.516 | 0.530 |
+| VocalSet exercises | 512 | 512 | 29,423 / 29,423 | **0.589** | 0.589 | 0.599 |
+| DAMP | 512 | 512 | 42,617 / 42,617 | **0.364** | 0.364 | 0.364 |
+
+The chip reproduces the chip-rule reference spike for spike on every window: 100,847 spikes, none
+missing, none extra. So for this network `chipref.py` with `CHIP` rules *is* the chip, and anything
+measured with it in software can be trusted as a board result. The chord outputs stayed silent.
 
 Consequences for training:
 
@@ -131,15 +143,23 @@ Consequences for training:
   hidden layer needs fewer inputs, sparser recurrence, or the "plane pairing" the trainer mentions,
   which has not been tried on the board.
 - Outputs 0 to 11 are silent on the board as intended, so a pitch-only model costs nothing extra.
-- One window is not a statistic. The board comparison over the whole test set is the next step.
+- **A new model can be judged for the chip without a board:** run `eval_modes.py`; its "chip rules"
+  row is what the board will give, as long as the network shape and neuron settings stay the same.
+- The one-point gap between "as trained" and the board is the price of the two kept rule
+  differences. Training with the chip's rules would remove it.
 
 Still open:
 
-- Board against the reference on the full handoff test data, with spike counts and pitch accuracy.
-- Time per window with the board kept booted; then the live loop with the laptop front-end.
+- The live loop: keep the board booted, send a sliding 2 s window from the laptop front-end about
+  three times a second, discard the first 31 frames of each window, feed the selector.
+- These windows start from a reset state, as in training. Whether carrying the state on from window
+  to window would be better has not been tested.
 
 ## Log
 
+- **2026-10-08, evening** Timing measured (0.34 s per window). The whole test set was run on the
+  board: all 1,451 windows identical to the chip-rule reference; pitch accuracy on the board
+  0.516 / 0.589 / 0.364.
 - **2026-10-08, later** Network built for the chip and run on the board: it fits, and one window
   matches the reference exactly (section 5). Noted while reading, not yet tested: `sim_check.py`'s
   `load_quantized` builds the pipeline without `out_neurons`, so it would create 12 outputs for a
