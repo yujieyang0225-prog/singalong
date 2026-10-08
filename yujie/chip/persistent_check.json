@@ -1,0 +1,75 @@
+{
+  "tested_on": "physical Pulsar C1",
+  "talamo": "4.7.1",
+  "application_boots": 1,
+  "calls": [
+    {
+      "input": "random_A",
+      "seconds": 0.7834952499979408,
+      "shape": [
+        125,
+        24
+      ],
+      "spikes": 48,
+      "reference_spikes": 48,
+      "exact": true
+    },
+    {
+      "input": "silence_after_A",
+      "seconds": 0.34809770800347906,
+      "shape": [
+        125,
+        24
+      ],
+      "spikes": 0,
+      "reference_spikes": 0,
+      "exact": true
+    },
+    {
+      "input": "repeat_A",
+      "seconds": 0.34700970801350195,
+      "shape": [
+        125,
+        24
+      ],
+      "spikes": 48,
+      "reference_spikes": 48,
+      "exact": true
+    },
+    {
+      "input": "full_scale",
+      "seconds": 0.36767795898776967,
+      "shape": [
+        125,
+        24
+      ],
+      "spikes": 161,
+      "reference_spikes": 161,
+      "exact": true
+    },
+    {
+      "input": "silence_after_full",
+      "seconds": 0.3487712499918416,
+      "shape": [
+        125,
+        24
+      ],
+      "spikes": 0,
+      "reference_spikes": 0,
+      "exact": true
+    },
+    {
+      "input": "repeat_A_again",
+      "seconds": 0.3345395840005949,
+      "shape": [
+        125,
+        24
+      ],
+      "spikes": 48,
+      "reference_spikes": 48,
+      "exact": true
+    }
+  ],
+  "boot_seconds": 5.923255336994771,
+  "passed": true
+}
