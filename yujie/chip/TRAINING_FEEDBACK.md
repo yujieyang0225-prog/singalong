@@ -16,7 +16,7 @@ reference. Section 5 has the first board measurement.
 | What do those differences cost? | About 1 point of pitch accuracy at most. No retraining is needed because of them. |
 | What should the next training session change? | Nothing is required. Section 4 lists what would make the model safer on the chip. |
 | Does the network fit and run on the real chip? | **Yes** (2026-10-08): it builds, the chip accepts it, and all 1,451 test windows came back identical to the reference. |
-| Is the chip fast enough for a live loop? | 0.34 s per 2 s window once booted, so about three updates per second. |
+| Is the chip fast enough for a live loop? | Standalone persistent calls measured 0.335–0.368 s after the first call. The complete live worker is not yet validated; see section 6. |
 
 ## 1. Accuracy to expect on the chip from the same weights
 
@@ -134,8 +134,8 @@ recurrent network, and returns the output spikes of every frame.
 | DAMP | 512 | 512 | 42,617 / 42,617 | **0.364** | 0.364 | 0.364 |
 
 The chip reproduces the chip-rule reference spike for spike on every window: 100,847 spikes, none
-missing, none extra. So for this network `chipref.py` with `CHIP` rules *is* the chip, and anything
-measured with it in software can be trusted as a board result. The chord outputs stayed silent.
+missing, none extra. This validates `chipref.py` with `CHIP` rules for this checkpoint and these tested inputs.
+Software predictions remain software results; future checkpoints and architectures require verification. The chord outputs stayed silent.
 
 Consequences for training:
 
@@ -143,8 +143,8 @@ Consequences for training:
   hidden layer needs fewer inputs, sparser recurrence, or the "plane pairing" the trainer mentions,
   which has not been tried on the board.
 - Outputs 0 to 11 are silent on the board as intended, so a pitch-only model costs nothing extra.
-- **A new model can be judged for the chip without a board:** run `eval_modes.py`; its "chip rules"
-  row is what the board will give, as long as the network shape and neuron settings stay the same.
+- **A new model can be screened without a board:** run `eval_modes.py`; its "chip rules" row is a
+  prediction, not a physical-board measurement. Verify each new exported checkpoint before deployment.
 - The one-point gap between "as trained" and the board is the price of the two kept rule
   differences. Training with the chip's rules would remove it.
 
@@ -155,7 +155,46 @@ Still open:
 - These windows start from a reset state, as in training. Whether carrying the state on from window
   to window would be better has not been tested.
 
+## 6. Live integration progress — 2026-10-08
+
+**Milestone A passed on the physical board.** `persistent_board.py` reuses one Talamo 4.7.1
+connection. `persistent_check.json` records one RAM boot (5.923 s) and six separate calls:
+0.783 s for the first call; 0.335–0.368 s subsequently. Random input, silence after activity,
+full-scale input, and repeated input all match the zero-state reference exactly. Silence returns
+zero spikes. No model or encoder rules were changed.
+
+The generated application returns 126 frames including a flush frame. Retaining the first 125,
+with all 24 channels, matches the existing `board_check.py`. SDK source confirms an acknowledged
+internal-state reset after each sample; this is not an application reboot.
+
+**Milestone B passed software checks.** The 500 ms schedule alternates 31/32 new frames,
+uses the existing StreamingFrontEnd, calculates eight-frame rates within each replayed window,
+and delivers each new frame to the existing selector once. Startup omits 93 frames; subsequent
+frames remain contiguous. A one-second playout buffer preserves 16 ms selector/renderer pacing.
+Its delay must not be described as the 0.34 s board inference time.
+
+**Milestone C is blocked pending investigation.** Two worker startup attempts returned an empty
+sample list at the initial silence inference (`IndexError` during SDK raster conversion), including
+one attempt after the documented RAM-only clearing procedure. No prerecorded audio window reached
+the board worker successfully. Differences from the successful standalone check include silence as
+the first input and redirected SDK stdout. The exact cause is not yet established. Hardware retries
+were stopped under the requested stopping condition; the user subsequently requested continuation.
+Failure records: `startup_failure.json`, `startup_failure_after_clear.json`. The first record predates
+the startup failure counter fix; its zero counter is not evidence of a successful connection.
+
+**Independent fallback checks:** 12 seconds of deterministic prerecorded audio passed the existing
+baseline -> score follower -> violin WAV path (747 frames, no duplicates or late outputs >50 ms).
+Measured median audio-frame-end to renderer completion: 1.0047 s, including the intentional 1 s
+playout delay. A 12-second MacBook microphone -> baseline -> GarageBand MIDI run also completed;
+this is software-only fallback, not chip inference, and acoustic output quality was not assessed.
+A longer fallback stability test is in progress. No live-microphone chip or multi-minute chip test
+has passed yet. Nothing has been flashed; the frozen voice demo and original SDK container remain
+unchanged.
+
 ## Log
+
+- **2026-10-08, live integration** Persistent connection validated on six deterministic physical-board calls;
+  worker startup blocker and independent baseline tests recorded in section 6.
 
 - **2026-10-08, evening** Timing measured (0.34 s per window). The whole test set was run on the
   board: all 1,451 windows identical to the chip-rule reference; pitch accuracy on the board
