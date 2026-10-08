@@ -1,6 +1,6 @@
 # Start here: state of the sing-along chip work and what comes next
 
-Written 2026-10-08, end of the session. Read this first in a new session; it is meant to be enough
+Updated 2026-10-08 after the live integration session was rechecked. Read this first in a new session; it is meant to be enough
 to continue without the earlier conversation. Paths are relative to the workspace folder
 `~/TUM/NeuroTUM` unless they start with `/workspace` (inside a container).
 
@@ -16,7 +16,27 @@ laptop ("shape 2"), for the sing-along demo. The pitch is on Friday 9 October, 1
 | Build for the chip, confirm it fits | **done**, 104 neurons, fan-in 128 (the limit), RAM 23 % |
 | Chip equals reference | **done**, all 1,451 test windows identical on the board |
 | Time per window | **done**, 0.34 s per 2 s window, plus 6.6 s boot per call |
-| **Live loop with the laptop front-end** | **not started. This is the next task.** |
+| Persistent one-boot board adapter | **passed**, repeated deterministic windows match zero-state reference |
+| Prerecorded audio -> chip -> selector/violin | **passed**, 20/20 windows exact |
+| Live MacBook microphone -> chip -> GarageBand MIDI | **passed**, 26/26 windows exact |
+| Multi-minute physical-chip stability (Milestone E) | **failed: the connection stops after about 338 windows, 2 min 49 s at 500 ms. Reproduced.** |
+
+**In one sentence:** the live loop works on the chip for up to about 2 minutes 49 seconds per boot, every
+window exact; it is not yet usable for an open-ended performance, and start-up is not yet reliable.
+
+The live loop exists. Start with `yujie/chip/LIVE_CHIP.md` for exact host commands and interface semantics.
+Use `--worker-debug` on the currently validated path; startup synchronization remains a known risk.
+
+What has and has not been shown:
+
+- Every chip result in the live loop was obtained **with `--worker-debug`** (the SDK's communication
+  logging switched on). Starts without it failed three times. Why logging helps is unknown.
+- "Prerecorded audio" means `data/live_chip/tones.wav`, a generated test signal, not singing.
+- The microphone run was 15 s of room sound. **Nobody has sung into it, and nobody has listened to
+  the violin.** Whether the accompaniment is musically right is untested.
+- The whole session was rechecked on 2026-10-08: the software tests pass (5 of 5), the one-boot
+  board check passes again (6 of 6 exact, `persistent_recheck.json`), and the stability failure
+  repeats at the same count.
 
 Numbers and explanations: `yujie/chip/TRAINING_FEEDBACK.md` (kept current, pushed after every change).
 
@@ -48,7 +68,11 @@ Files in `yujie/chip/`:
 | `eval_modes.py` | pitch accuracy of a model under both rule sets (no board) |
 | `build_chip.py` | builds the host-fed chip application |
 | `board_check.py` | board against reference (`--timing` for time per window) |
-| `*.json` | results of the three scripts above |
+| `persistent_board.py`, `check_persistent.py` | Talamo 4.7.1 one-boot adapter and deterministic hardware checks |
+| `board_worker.py`, `live_chip.py`, `windowing.py` | SDK worker, Mac live loop, and overlap/rate adapter |
+| `LIVE_CHIP.md` | start/fallback commands, interface contract, timing definitions, recovery |
+| `test_windowing.py`, `make_test_audio.py` | software checks and deterministic audio generator |
+| `*.json` | original results, live measurements, and preserved failed-startup evidence |
 
 One file outside `yujie/` was changed on this branch: `jan/singalong/Pulsar/IF_DNR/import_torch_weights.py`
 (the import fix). Before the fix every import ran random weights.
@@ -97,42 +121,83 @@ its name. Step 2 alone already tells what the board will give.
 **Voice demo, any time:** `cd ~/TUM/NeuroTUM/demo-voice-v1 && ./run.sh` (about 10 s to load). It replaces
 whatever is on the board; the sing-along application has to be booted again afterwards.
 
-## 4. The next task: the live loop
+## 4. Live loop and next task
 
-Design agreed in the session:
+Implemented Shape 2:
 
 ```
-laptop microphone -> jan/singalong front-end (48 bands, 16 ms frames) -> sliding window of 125 frames (2 s)
-   -> board (encoder + recurrent network) -> output spikes per frame -> discard the first 31 frames
-   -> rate over the last 8 frames -> jan/singalong selector (--use melody) -> violin
+MacBook microphone (CoreAudio 16 kHz) -> existing StreamingFrontEnd (48 bands)
+ -> latest 125 frames every 500 ms -> persistent SDK worker -> physical IF encoder + recurrent SNN
+ -> 24-channel spikes -> eight-frame within-window rates -> unique newest frames
+ -> existing melody-only score follower/HMM -> existing violin renderer -> GarageBand MIDI
 ```
 
-Steps, in order:
+`live_chip.py` runs on the Mac with `python`.
+Only `board_worker.py` runs inside `singalong_sdk`. The Python environment now has sounddevice,
+mido, and python-rtmidi. ffmpeg handles file decoding. No installed SDK files were changed.
 
-1. **Keep the board booted between windows.** A normal `pipe(...)` call boots every time (6.6 s).
-   The recipe in the repository skill `pulsar-evk-app-bringup` uses private Talamo functions
-   (`_assemble_embedded_pipeline`, `get_board_connection`, `boot_application`,
-   `_configure_embedded_application_board_connection`, `_execute_pipeline`). Untried here. Measure the
-   per-call time; expect about 0.34 s.
-2. **Sliding window.** Every 0.35 to 0.5 s send the latest 125 frames. The network starts each window
-   from a reset state, exactly as in training, and the first 31 frames (0.5 s) are warm-up.
-3. **Connect to the team's host app.** `jan/singalong/live.py` reads evidence from several sources;
-   `singalong/evidence.py` has a "board JSON lines" source. Either emit that format or add a source
-   that calls the board directly. The model is pitch-only: use `--use melody`.
-4. **Fallback.** One switch to the team's baseline evidence (`--evidence baseline`), so there is a
-   demo if the board path fails on stage.
-5. **End-to-end check** with a recording first (`--source wav:...`), then the laptop microphone.
+**Start the chip demo** (from `agent-pitch-handoff`; check device IDs with `python -m sounddevice`):
 
-Things to decide or watch:
+```bash
+python -u yujie/chip/live_chip.py   --source mic:1 --mode chip --worker-debug --sink midi:GarageBand --playout-delay 1.25
+```
 
-- **Lag.** About 0.34 s processing plus the update interval, plus 16 ms from the chip's layer delay.
-- **Laptop microphone:** switch off macOS voice isolation and noise reduction; fix the input device.
-- **Output is sparse:** about 0.56 spikes per frame over the twelve pitch outputs, rate over 8 frames,
-  so ties are common. The selector's smoothing matters more than any single frame.
-- **Carrying state between windows** instead of resetting was not tested.
-- **A new model may arrive.** A search around A_vocalset_P was running on the cluster; check
-  `handoff/README.md` on `origin/singalong-pitch-handoff` for a new run before the demo.
-- **Fan-in is at the limit** (128). A wider hidden layer will not fit as is.
+**Fallback:** the same command with `--mode baseline`; it does not touch the board. `--sink print`
+needs no synth. GarageBand must have a suitable violin instrument selected; successful MIDI dispatch
+was measured, downstream synth/DAC latency and audible musical quality were not assessed.
+
+Important measured distinctions:
+
+- Standalone persistent test: boot 5.923 s; first call 0.783 s; subsequent 0.335–0.368 s.
+- Prerecorded live integration: 20/20 windows exact; median SDK round trip 0.369 s; audio-frame-end
+  to renderer completion 1.0046 s with intentional 1 s playout.
+- Live microphone: 26/26 windows exact; median SDK round trip 0.360 s; audio-frame-end to MIDI
+  renderer completion 1.2547 s with intentional 1.25 s playout. 814 unique frames delivered.
+- No live-run skipped updates, duplicates, or outputs >50 ms late in those two checks.
+- Startup frames 0..92 are deliberately omitted. Each subsequent frame is delivered once;
+  a short tail before the next complete scheduled update is counted separately on finite recordings.
+
+**Startup caveat:** early worker starts returned no complete sample, including after RAM clearing.
+An active-first self-check is followed by silence to verify reset. Silence-first failed in one standalone
+probe, but active-first worker startup also failed, so the cause is not established. The measured
+worker path with `--worker-debug` passed three consecutive starts. Do not claim logging fixes the root
+cause. The wrapper now surfaces SDK timeout/reset warnings, fails closed, and never reboots between
+windows. Failed-startup JSON files are retained.
+
+**Milestone E result.** The connection stops after about 338 windows: **measured twice, at the same count.**
+
+| Run | Windows before it stopped | All exact until then | How it stopped |
+| --- | ---: | --- | --- |
+| 185 s stability run, prerecorded audio at 500 ms (`chip_stability.json`) | 337, plus 2 start-up calls | yes | `wait_events()` returned `None` inside the SDK |
+| Back-to-back calls, no audio pacing (`check_call_limit.py`, `call_limit.json`) | 338 | yes | the same error |
+
+Because the count repeats with and without audio pacing, the limit belongs to the connection, not to
+timing or to the audio. It is consistent with a ceiling of about 1,024 transport events at three
+events per window, which the previous session saw in its trace; that reading is not proven.
+At one window every 500 ms it means **about 2 minutes 49 seconds of continuous chip operation per boot.**
+After that the loop stops with an error. It does not fall back silently.
+
+**Next steps, in this order:**
+
+1. **Decide how to live with the 338-window limit.** Options, none implemented:
+   - keep each performance under about 2 min 40 s and restart the worker between performances
+     (a restart costs about 7 s: 5.9 s boot plus the first call);
+   - a planned reconnect before the limit, with an explicit, logged switch to the baseline for the gap;
+   - a longer update period (1 s gives about 5 min 38 s, with updates half as often);
+   - find out whether the host side of the connection can be reopened without rebooting the board.
+   The installed SDK must not be modified.
+2. **Start-up reliability.** Run 10 deliberate start/stop cycles with `--worker-debug` and count failures.
+3. Rehearse with a person singing
+and confirm the actual GarageBand violin sound through headphones. Check macOS input mode/voice
+isolation manually. A 15-second ambient microphone test is not a musical-quality or calibrated
+sample-rate test. Test startup reliability across deliberate restart cycles before relying on the chip
+on stage; keep the explicit baseline switch ready. Do not reduce the 500 ms period based on the
+0.34 s batch-throughput measurement.
+
+The model mismatch, model weights, reset semantics, and old complete test results are unchanged.
+See `LIVE_CHIP.md` for protocol/reset source locations, timestamps, readout behavior, performance
+metric definitions, multi-minute commands, and explicit RAM-only recovery. Every new checkpoint
+requires verification; software reference predictions are not physical-board measurements.
 
 ## 5. Known quirks of this setup
 

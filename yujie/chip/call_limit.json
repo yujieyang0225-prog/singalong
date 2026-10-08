@@ -1,0 +1,13 @@
+{
+ "tested_on": "physical Pulsar C1",
+ "requested_calls": 500,
+ "completed_calls": 338,
+ "exact_calls": 338,
+ "error": "TypeError: cannot unpack non-iterable NoneType object",
+ "boot_seconds": 5.88,
+ "wall_seconds": 130.5,
+ "call_seconds": {
+  "median": 0.36,
+  "max": 0.722
+ }
+}

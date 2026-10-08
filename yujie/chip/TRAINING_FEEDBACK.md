@@ -202,8 +202,22 @@ maximum 1.2920 s, including 1.25 s playout. CoreAudio reported 0.2386 s input bu
 This was a functional microphone test, not a singing-quality or pitch-accuracy evaluation; downstream
 GarageBand/DAC/acoustic latency and instrument sound were not measured. No microphone audio saved.
 
-**Milestone E is running:** 185 seconds of prerecorded physical-chip inference, checking each window
-against the reference. The long chip test is not yet claimed complete.
+**Milestone E failed, and the failure is reproducible.** The connection stops after about 338 windows: **measured twice, at the same count.**
+
+| Run | Windows before it stopped | All exact until then | How it stopped |
+| --- | ---: | --- | --- |
+| 185 s stability run, prerecorded audio at 500 ms (`chip_stability.json`) | 337, plus 2 start-up calls | yes | `wait_events()` returned `None` inside the SDK |
+| Back-to-back calls, no audio pacing (`check_call_limit.py`, `call_limit.json`) | 338 | yes | the same error |
+
+Because the count repeats with and without audio pacing, the limit belongs to the connection, not to
+timing or to the audio. It is consistent with a ceiling of about 1,024 transport events at three
+events per window, which the previous session saw in its trace; that reading is not proven.
+At one window every 500 ms it means **about 2 minutes 49 seconds of continuous chip operation per boot.**
+After that the loop stops with an error. It does not fall back silently.
+Until then nothing was wrong: median board round trip 0.364 s, no skipped or duplicated frames;
+18 outputs were more than 50 ms late, all at the point of failure.
+
+This does not concern training. It limits how long one chip session can run, whatever the model.
 
 **Independent fallback checks passed:** 12 seconds of prerecorded baseline -> score follower -> violin
 WAV (747 frames); 12 seconds of MacBook microphone -> baseline -> GarageBand MIDI (747 frames,
@@ -216,6 +230,10 @@ Usage, interface details and reproduction commands: `yujie/chip/LIVE_CHIP.md`.
 Nothing has been flashed; the model, frozen voice demo and original SDK container remain unchanged.
 
 ## Log
+
+- **2026-10-08, recheck** Milestone E failed after 337 windows; a back-to-back test stopped after 338.
+  The connection has a fixed lifetime of about 338 windows. Software tests and the one-boot check
+  were rerun and pass. Singing through the chip loop has still not been tried by a person.
 
 - **2026-10-08, Milestone D** Physical-chip microphone/MIDI integration passed: 26/26 exact windows;
   measured median audio-to-renderer latency 1.2547 s. Multi-minute chip stability test started.

@@ -67,6 +67,23 @@ python -u yujie/chip/live_chip.py \
 Use separate metrics filenames to preserve earlier evidence. Console logs show the active mode.
 Microphone audio is not saved; metrics contain levels and timing, not raw audio.
 
+## Known limit: about 338 windows per boot
+
+The connection stops after about 338 windows: **measured twice, at the same count.**
+
+| Run | Windows before it stopped | All exact until then | How it stopped |
+| --- | ---: | --- | --- |
+| 185 s stability run, prerecorded audio at 500 ms (`chip_stability.json`) | 337, plus 2 start-up calls | yes | `wait_events()` returned `None` inside the SDK |
+| Back-to-back calls, no audio pacing (`check_call_limit.py`, `call_limit.json`) | 338 | yes | the same error |
+
+Because the count repeats with and without audio pacing, the limit belongs to the connection, not to
+timing or to the audio. It is consistent with a ceiling of about 1,024 transport events at three
+events per window, which the previous session saw in its trace; that reading is not proven.
+At one window every 500 ms it means **about 2 minutes 49 seconds of continuous chip operation per boot.**
+After that the loop stops with an error. It does not fall back silently.
+Reproduce with `check_call_limit.py` (its docstring has the command). Plan each chip performance to
+stay under about 2 min 40 s, or restart the worker between pieces, until this is solved.
+
 ## Timing and selector contract
 
 - Each full inference is 125 frames of 48 integer-valued float32 features in 0..100.
