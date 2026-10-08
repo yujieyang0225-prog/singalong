@@ -42,11 +42,13 @@ def _reference(data):
     return {k: ref[k] for k in ref.files}
 
 
-def load_recordings(split, data=None, datasets=None):
+def load_recordings(split, data=None, datasets=None, compact=False):
     """Whole recordings of one split ('train' / 'val' / 'test') as a list of dicts with
     X [T,48] (0..100), Y [T,12] chord pcs, MEL [T] melody class 0..12, M [T] = 'sung part' mask, id.
 
     data: one dataset folder; datasets: several (concatenated). Default: $SINGALONG_DATA or data/damp100.
+    compact: same values in ~1/3 of the RAM (X_log float16 as stored, X uint8, Y uint8, MEL int8);
+             crops() and augment.random_augment() turn them back into float32.
     """
     folders = [Path(d) for d in (datasets or [data or DATA])]
     recs = []
@@ -69,8 +71,12 @@ def load_recordings(split, data=None, datasets=None):
             if len(on):
                 sung[on[0]:on[-1] + 1] = True
             mel_cls = np.where((mel >= 0) & v, mel % 12, NO_NOTE).astype(np.int64)
-            recs.append(dict(id=r["id"], X_log=X, voiced=v, X=fe.normalise(X, v), Y=chords.astype(np.float32),
-                             MEL=mel_cls, M=sung, folder=str(folder)))
+            rec = dict(id=r["id"], X_log=X, voiced=v, X=fe.normalise(X, v), Y=chords.astype(np.float32),
+                       MEL=mel_cls, M=sung, folder=str(folder))
+            if compact:
+                rec.update(X_log=X.astype(np.float16), X=rec["X"].astype(np.uint8), Y=rec["Y"].astype(np.uint8),
+                           MEL=mel_cls.astype(np.int8))
+            recs.append(rec)
     return recs
 
 
@@ -86,7 +92,10 @@ def crops(recs, crop=125, stride=125, burn=31, start_offset=0):
             m[:burn] = 0
             X.append(r["X"][t0:t0 + crop])
             Y.append(np.concatenate([r["Y"][t0:t0 + crop], m[:, None], r["MEL"][t0:t0 + crop, None].astype(np.float32)], 1))
-    return torch.tensor(np.stack(X)), torch.tensor(np.stack(Y))
+    if not X:
+        return torch.zeros(0, crop, fe.NB), torch.zeros(0, crop, N_CH)
+    # from_numpy shares the stacked array instead of copying it (torch.tensor would hold both at the peak)
+    return torch.from_numpy(np.stack(X).astype(np.float32, copy=False)), torch.from_numpy(np.stack(Y).astype(np.float32, copy=False))
 
 
 def dense_dataset(X, Y):
@@ -100,6 +109,8 @@ def baseline(train_recs, Y_val):
     from .metrics import scores
     tr = np.concatenate([r["Y"][r["M"]] for r in train_recs])
     tr = tr[tr.sum(1) > 0]                                            # ignore 'chord unknown' rows (pseudo-labelled audio)
+    if not len(tr):                                                   # no chord labels at all (VocalSet alone)
+        return None
     sets, counts = np.unique(tr, axis=0, return_counts=True)
     best = torch.tensor(sets[counts.argmax()]).float()
     s = scores(best.expand(*Y_val.shape[:2], 12).clone(), Y_val)

@@ -9,7 +9,7 @@ from .data import MASK_CH, MEL_CH, NO_NOTE
 
 def scores(rate, Y, thr=0.5):
     """Chroma F1 and exact-chord match of chord rates [N,T,12] against Y [N,T,>=13] on scored frames."""
-    m = Y[..., MASK_CH] > 0
+    m = (Y[..., MASK_CH] > 0) & (Y[..., :12].sum(-1) > 0)    # all-zero chord row = chord unknown (VocalSet), like the loss
     p, y = (rate[m] >= thr).float(), Y[..., :12][m]
     tp, fp, fn = (p * y).sum(), (p * (1 - y)).sum(), ((1 - p) * y).sum()
     return dict(f1=round(float(2 * tp / (2 * tp + fp + fn + 1e-9)), 3),

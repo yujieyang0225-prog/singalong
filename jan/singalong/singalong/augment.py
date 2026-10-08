@@ -89,7 +89,7 @@ DEFAULT = dict(shift=6, tempo=(0.75, 1.35), warp=0.2, noise=True, dropout=0.03)
 
 def random_augment(rec, rng, cfg=DEFAULT):
     """Random transposition in [-shift, shift] (kept inside the band range for the sung notes), tempo, warp, noise."""
-    out = rec
+    out = rec if rec["X_log"].dtype == np.float32 else dict(rec, X_log=rec["X_log"].astype(np.float32))  # compact recs
     if cfg.get("shift"):
         k = int(rng.integers(-cfg["shift"], cfg["shift"] + 1))
         out = band_shift(out, k, rng)

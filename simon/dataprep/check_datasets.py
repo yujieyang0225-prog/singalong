@@ -22,6 +22,9 @@ LIMIT_GB = 12                    # RAM per job on the cluster (sbatch --mem in t
 # the train split (float32 recordings, a full augmented copy per epoch, all overlapping crops stacked twice),
 # + 1x for val; ~1 GB more on the GPU for the CUDA context.
 BASE_GB, TRAIN_X, CUDA_GB = 0.5, 7.0, 1.0
+# with --compact --chunk 64 (train_slurm.sh default): recordings at 159 instead of 432 bytes per frame, plus one
+# chunk of augmented recordings and its crops (measured on damp250: 1.5 GB peak vs 2.9 GB)
+COMPACT, CHUNK_GB = 159 / 432, 0.7
 # label sanity: random labels give 3/12 = 0.25; VocalSet (studio, annotated) ~0.84, DAMP (amateur karaoke) ~0.61
 SANE = 0.45
 
@@ -78,11 +81,17 @@ def main(paths):
             warn.append(f"{p}: data.crops failed: {e!r}")
     runs = {p: [p] for p in ram_by} | ({" + ".join(ram_by): list(ram_by)} if len(ram_by) > 1 else {})
     print(f"\nPeak RAM of train_torch.py on the GPU (estimate; limit {LIMIT_GB} GB per job):")
+    print(f"  {'':40s} {'plain':>8s} {'--compact --chunk 64':>21s}")
     for name, ps in runs.items():
+        loaded = sum(ram_by[q].get("train", 0) + ram_by[q].get("val", 0) for q in ps)
         gb = BASE_GB + CUDA_GB + sum(TRAIN_X * ram_by[q].get("train", 0) + ram_by[q].get("val", 0) for q in ps)
-        print(f"  {name:40s} {gb:5.1f} GB")
-        if gb > LIMIT_GB - 1:
-            warn.append(f"{name}: training needs ~{gb:.0f} GB, more than the {LIMIT_GB} GB per job; use a smaller N")
+        lean = BASE_GB + CUDA_GB + CHUNK_GB + COMPACT * loaded
+        print(f"  {name:40s} {gb:5.1f} GB {lean:18.1f} GB")
+        if lean > LIMIT_GB - 1:
+            warn.append(f"{name}: training needs ~{lean:.0f} GB even with --compact --chunk, more than "
+                        f"{LIMIT_GB} GB per job; use a smaller N")
+        elif gb > LIMIT_GB - 1:
+            print(f"    (fits only with --compact --chunk, the train_slurm.sh default)")
     for w in warn:
         print("WARNING:", w)
     return 1 if any(k in w for w in warn for k in ("empty", "sanity", "crops failed")) else 0

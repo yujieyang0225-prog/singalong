@@ -56,12 +56,21 @@ def main():
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--lr", type=float, default=0.3, help="in chip units (int8 weights), so ~100x a float-net lr")
     ap.add_argument("--lr-enc", type=float, default=1.0)
+    ap.add_argument("--wd", type=float, default=0.0,
+                    help="AdamW weight decay of the hidden/output layers. Keep 0: with fixed thresholds the decay shrinks "
+                         "the int8 weights and so the firing rates (AdamW's default 0.01 made every run decline or collapse)")
     ap.add_argument("--crop", type=int, default=125, help="frames per crop (125 = 2 s)")
     ap.add_argument("--stride", type=int, default=0, help="crop stride in frames (0 = crop/2, overlapping)")
     ap.add_argument("--no-aug", action="store_true")
+    ap.add_argument("--compact", action="store_true", help="recordings in compact dtypes (~1/3 of the RAM, same values)")
+    ap.add_argument("--chunk", type=int, default=0,
+                    help="augment + crop this many recordings at a time (0 = all at once); bounds the RAM per epoch")
     ap.add_argument("--shift", type=int, default=6, help="max transposition in semitones for augmentation")
     ap.add_argument("--w-pitch", type=float, default=1.0)
     ap.add_argument("--w-chord", type=float, default=1.0)
+    ap.add_argument("--pitch-only", action="store_true",
+                    help="train the melody head only; the 12 chord outputs stay silent (weights 0, bias -128), so the "
+                         "file keeps the 24-output layout and the selector ignores the chord evidence")
     ap.add_argument("--val-crops", type=int, default=512)
     ap.add_argument("--device", default="auto")
     ap.add_argument("--seed", type=int, default=0)
@@ -76,19 +85,32 @@ def main():
     out = a.runs / a.name
     out.mkdir(parents=True, exist_ok=True)
 
-    train_recs = data.load_recordings("train", datasets=a.data)
-    val_recs = data.load_recordings("val", datasets=a.data)
+    train_recs = data.load_recordings("train", datasets=a.data, compact=a.compact)
+    val_recs = data.load_recordings("val", datasets=a.data, compact=a.compact)
     Xv, Yv = data.crops(val_recs, crop=a.crop)
     keep = np.random.default_rng(1).choice(len(Xv), min(a.val_crops, len(Xv)), replace=False)
     Xv, Yv = Xv[keep], Yv[keep]
     base = data.baseline(train_recs, Yv)
-    print(f"device {device} · train {len(train_recs)} recordings · val {len(Xv)} crops · "
-          f"baseline (always {base['chord']}): F1 {base['f1']} exact {base['exact']}", flush=True)
+    print(f"device {device} · train {len(train_recs)} recordings · val {len(Xv)} crops · " +
+          (f"baseline (always {base['chord']}): F1 {base['f1']} exact {base['exact']}" if base else "no chord labels"),
+          flush=True)
 
     net = SingalongSNN(48, a.hidden, a.out, recurrent=not a.feedforward).to(device)
+    if a.pitch_only:
+        if a.out < 24:
+            sys.exit("--pitch-only needs --out 24 (outputs 12..23 are the melody head)")
+        a.w_chord = 0.0
+
+    def silence_chords():
+        if a.pitch_only:
+            with torch.no_grad():
+                net.o.W[:12] = 0
+                net.o.b[:12] = -128
+    silence_chords()
     print(f"network 48 -> {a.hidden}{' rec' if not a.feedforward else ''} -> {a.out}: {net.fit_note}")
     opt = torch.optim.AdamW([{"params": net.enc.parameters(), "lr": a.lr_enc, "weight_decay": 0},
-                             {"params": list(net.h.parameters()) + list(net.o.parameters()), "lr": a.lr}])
+                             {"params": list(net.h.parameters()) + list(net.o.parameters()), "lr": a.lr,
+                              "weight_decay": a.wd}])
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, a.epochs)
     loss_fn = DualLoss(w_pitch=a.w_pitch if a.out >= 24 else 0, w_chord=a.w_chord)
     start_ep, best = 1, None
@@ -109,22 +131,29 @@ def main():
     for ep in range(start_ep, a.epochs + 1):
         qat = ep > a.epochs - a.qat_epochs
         net.set_qat(qat)
-        recs = train_recs if a.no_aug else [augment.random_augment(r, rng, aug_cfg) for r in train_recs]
-        X, Y = data.crops(recs, crop=a.crop, stride=a.stride or a.crop // 2, start_offset=int(rng.integers(a.crop)))
-        perm = torch.randperm(len(X))
         tot, parts_sum, n = 0.0, {}, 0
-        for i in range(0, len(X), a.batch):
-            idx = perm[i:i + a.batch]
-            xb, yb = X[idx].to(device), Y[idx].to(device)
-            s_o, s_h, _ = net(xb, return_hidden=True)
-            loss, parts = loss_fn(s_o, yb, s_h)
-            opt.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(net.parameters(), 5.0)
-            opt.step()
-            tot += float(loss.detach()); n += 1
-            for k, v in parts.items():
-                parts_sum[k] = parts_sum.get(k, 0) + v
+        order = rng.permutation(len(train_recs)) if a.chunk else np.arange(len(train_recs))
+        size = a.chunk or len(train_recs)
+        for c in range(0, len(order), size):                          # chunk 0: one chunk = the old behaviour
+            part = [train_recs[j] for j in order[c:c + size]]
+            recs = part if a.no_aug else [augment.random_augment(r, rng, aug_cfg) for r in part]
+            X, Y = data.crops(recs, crop=a.crop, stride=a.stride or a.crop // 2, start_offset=int(rng.integers(a.crop)))
+            del part, recs
+            perm = torch.randperm(len(X))
+            for i in range(0, len(X), a.batch):
+                idx = perm[i:i + a.batch]
+                xb, yb = X[idx].to(device), Y[idx].to(device)
+                s_o, s_h, _ = net(xb, return_hidden=True)
+                loss, parts = loss_fn(s_o, yb, s_h)
+                opt.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(net.parameters(), 5.0)
+                opt.step()
+                silence_chords()
+                tot += float(loss.detach()); n += 1
+                for k, v in parts.items():
+                    parts_sum[k] = parts_sum.get(k, 0) + v
+            del X, Y
         sched.step()
         ev = evaluate(net, Xv, Yv, device)
         el = time.time() - t0
@@ -136,7 +165,7 @@ def main():
                     ev["f1"], ev["exact"], ev["f1_thr0.2"], ev.get("pitch_acc"), ev["hidden_rate"], ev["dead_hidden"],
                     int(qat), round(el)])
         logf.flush()
-        score = ev["f1"] + ev.get("pitch_acc", 0)
+        score = (0 if a.pitch_only else ev["f1"]) + ev.get("pitch_acc", 0)
         if qat and (best is None or score > best["score"]):          # keep the best *integer* model
             best = {**ev, "epoch": ep, "score": score}
             net.export_npz(out / "weights_int8.npz")

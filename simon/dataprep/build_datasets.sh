@@ -14,8 +14,9 @@
 #   upload    rsync to $CLUSTER; then train there with SLURM + Singularity (train_slurm.sh), see the commands printed at the end
 # Gain changes and 2 s crops are not baked in: the trainer does both, fresh every epoch (singalong.augment, data.crops).
 #
-# N=250 because a cluster job gets 12 GB RAM and train_torch.py needs ~30 MB per DAMP take at its peak
-# (check prints the estimate per run). Download more (N=3000) only once the trainer streams its crops.
+# A cluster job gets 12 GB RAM. Plain train_torch.py needs ~30 MB per DAMP take at its peak, so N=250 is the
+# default; with --compact --chunk 64 (train_slurm.sh default) it is ~2 MB per take, so N=3000 fits (~7 GB).
+# check prints both estimates per run.
 #
 # Env: N=250  OUT=data/damp250  WORKERS=$(nproc)  CLUSTER=<user>@<cluster-host>  STARTER=<Innatera starter repo>
 set -euo pipefail
@@ -85,7 +86,7 @@ stage_upload() {
     "$REPO/" "$CLUSTER:MNH26SVR/"
   # data/runs/logs must exist before sbatch, or SLURM cannot open the job's output file and the job fails silently
   ssh "$CLUSTER" 'mkdir -p MNH26SVR/data/runs/logs && chmod 700 MNH26SVR/data
-    ls -lh innatera_singularity.sif 2>/dev/null || echo "WARNING: no ~/innatera_singularity.sif; set SIF=<path> when you sbatch"'
+    ls -lh MNH26SVR/innatera_singularity.sif 2>/dev/null || echo "WARNING: no ~/MNH26SVR/innatera_singularity.sif; set SIF=<path> when you sbatch"'
   local sets=("$REPO/$OUT"); [ -d "$REPO/data/vocalset" ] && sets+=("$REPO/data/vocalset")
   rsync -a --info=progress2 "${sets[@]}" "$CLUSTER:MNH26SVR/data/"
   local d; d=$(basename "$OUT")
