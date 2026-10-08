@@ -1,6 +1,7 @@
 # Feedback from the chip side for the next training session
 
 Model looked at: `handoff/runs/A_vocalset_P/weights_int8.npz` (md5 `64623170…`).
+Section 7 covers its successor trained under the chip's rules, `A_vsP_chip_shift3`.
 Branch `yujie/singalong-chip`, started from `singalong-pitch-handoff` at `2a612c3`.
 Kept up to date as the chip work proceeds; the log at the end says what changed and when.
 
@@ -16,7 +17,8 @@ reference. Section 5 has the first board measurement.
 | What do those differences cost? | About 1 point of pitch accuracy at most. No retraining is needed because of them. |
 | What should the next training session change? | Nothing is required. Section 4 lists what would make the model safer on the chip. |
 | Does the network fit and run on the real chip? | **Yes** (2026-10-08): it builds, the chip accepts it, and all 1,451 test windows came back identical to the reference. |
-| Is the chip fast enough for a live loop? | Standalone persistent calls measured 0.335–0.368 s after the first call. The complete live worker is not yet validated; see section 6. |
+| Is the chip fast enough for a live loop? | Yes, at one update every 0.5 s: 0.37 to 0.39 s per 2 s window on the board. The live loop runs, with about 1 s from sound to note; see section 6. |
+| Does training under the chip's rules help? | Yes on songs. `A_vsP_chip_shift3` scores 0.577 / 0.591 / 0.378 on the board, against 0.516 / 0.589 / 0.364 for `A_vocalset_P`; see section 7. |
 
 ## 1. Accuracy to expect on the chip from the same weights
 
@@ -150,8 +152,8 @@ Consequences for training:
 
 Still open:
 
-- The live loop: keep the board booted, send a sliding 2 s window from the laptop front-end about
-  three times a second, discard the first 31 frames of each window, feed the selector.
+- The live loop now exists (section 6): the board stays booted and gets the latest 2 s window from
+  the laptop front-end every 0.5 s.
 - These windows start from a reset state, as in training. Whether carrying the state on from window
   to window would be better has not been tested.
 
@@ -202,7 +204,7 @@ maximum 1.2920 s, including 1.25 s playout. CoreAudio reported 0.2386 s input bu
 This was a functional microphone test, not a singing-quality or pitch-accuracy evaluation; downstream
 GarageBand/DAC/acoustic latency and instrument sound were not measured. No microphone audio saved.
 
-**Milestone E failed, and the failure is reproducible.** The connection stops after about 338 windows: **measured twice, at the same count.**
+**Milestone E failed at first, and the failure was reproducible (fixed, see below).** The connection stopped after about 338 windows: **measured twice, at the same count.**
 
 | Run | Windows before it stopped | All exact until then | How it stopped |
 | --- | ---: | --- | --- |
@@ -217,20 +219,35 @@ After that the loop stops with an error. It does not fall back silently.
 Until then nothing was wrong: median board round trip 0.364 s, no skipped or duplicated frames;
 18 outputs were more than 50 ms late, all at the point of failure.
 
-This does not concern training. It limits how long one chip session can run, whatever the model.
+This did not concern training. It limited how long one chip session could run, whatever the model.
 
-**Event-cleanup fix under validation (later in this session).** Native source identifies event IDs
-as eventfd file descriptors, waits with `select()`, and closes each eventfd when its request is freed.
-Talamo creates a fresh MocktcpManager per pipeline call but can leave ping completions unconsumed.
-A repository-local `TrackedEvents` proxy now accounts for every asynchronous request and drains the
-remaining ping completions after successful data delivery and acknowledged model-state reset.
-It neither reopens the connection nor reboots the board, and changes no SDK file or model rule.
+**The 338-window limit is fixed (board).** The cause, from the SDK's source: every window left three
+operating-system event handles open, because Talamo creates a new MocktcpManager per pipeline call and
+never collects its last ping replies. The native library waits on these handles with `select()`, which
+only works for handle numbers below 1,024. With about 11 handles open at rest, (1,024 − 11) / 3 ≈ 338.
+A repository-local `TrackedEvents` proxy (`transport_events.py`) now collects the leftover ping replies
+after each window. It neither reopens the connection nor reboots the board, and changes no SDK file or
+model rule.
 
-The first physical recheck passed all six deterministic active/silent/repeat cases exactly
-(`persistent_event_cleanup_check.json`), 0.359–0.443 s per call. Three software regression tests cover
-bounded event reuse, unexpected leftover data, and native no-completion errors. A new 185-second
-physical-chip run is in progress with per-window open-FD, pending-event, and max-event-ID counters.
-The long-run fix is not yet claimed validated. Previous failed runs remain intact.
+| Evidence, all on the board | Result |
+| --- | --- |
+| Six deterministic windows (`persistent_event_cleanup_check.json`) | all exact, 0.359–0.443 s per call |
+| 185 s live run (`chip_stability_event_cleanup.json`) | 366 of 366 windows exact; open handles constant at 11 |
+| 4-minute microphone run (`results/live_2026-10-08/chip_microphone_4min_synth.json`) | 476 windows, completed; not compared with the reference |
+| Whole test set on one boot (`results/A_vsP_chip_shift3/banner_testset_check.json`) | 1,451 of 1,451 windows exact |
+
+In the 185 s run, 195 of 11,439 frames were more than 50 ms late with a 1.0 s playout delay.
+Three software tests cover bounded handle reuse, unexpected leftover data and native no-completion errors.
+One caution: a 1,451-window run with the SDK's communication logging switched off stalled between
+window 300 and 399 (nothing was saved; cause unknown). The same run with logging on, as in every live
+run, passed. That is one run each way.
+
+**Start-up, later the same day.** The failure is in the SDK's start-up handshake between host and board
+(the worker reports `waiting for sync`). The host's reply in that handshake is sent once and never
+repeated, so a boot whose handshake fails stays dead. During the evening it happened in roughly one
+start in three. `live_chip.py` now clears the board (RAM only) and starts a fresh worker, up to
+`--start-attempts` times (default 3), before any audio is processed; every failure is printed and
+counted in the metrics. The cause is not fixed.
 
 **Independent fallback checks passed:** 12 seconds of prerecorded baseline -> score follower -> violin
 WAV (747 frames); 12 seconds of MacBook microphone -> baseline -> GarageBand MIDI (747 frames,
@@ -242,7 +259,65 @@ quality was not assessed. No microphone audio is saved.
 Usage, interface details and reproduction commands: `yujie/chip/LIVE_CHIP.md`.
 Nothing has been flashed; the model, frozen voice demo and original SDK container remain unchanged.
 
+## 7. A_vsP_chip_shift3 on the board — 2026-10-08, evening
+
+Simon trained `A_vsP_chip_shift3` under the chip's rules (`--chip-rules --shift 3`), which is the change
+section 2 offers. Same network: 48 → 80 recurrent → 24, int8, fan-in 128. Weight file md5
+`6b47d452dddcd1cdddbe8d4f2a152035`, copied from `origin/singalong-pitch-handoff` at `4917b31`.
+Import: `IMPORT CHECK PASSED`, 420 output spikes in all four comparisons.
+
+| Rules, and where measured | VocalSet songs | VocalSet exercises | DAMP |
+| --- | ---: | ---: | ---: |
+| **Board** (`results/A_vsP_chip_shift3/board_check.json`) | **0.577** | **0.591** | **0.378** |
+| Software, chip rules, scored as the output arrives | 0.577 | 0.591 | 0.378 |
+| Software, chip rules, labels shifted by the one-frame delay | 0.587 | 0.597 | 0.381 |
+| Software, the laptop trainer's original rules | 0.593 | 0.619 | 0.375 |
+| For comparison: `A_vocalset_P` on the board | 0.516 | 0.589 | 0.364 |
+
+- Board against reference: all 1,451 windows identical, 91,343 spikes, none missing or extra. The chord
+  outputs stayed silent.
+- Build: RAM 91,360 bytes (23.23 %), largest fan-in 128, accepted by the mapper.
+- Time on the board: 0.37 to 0.39 s per 2 s window, the same as for `A_vocalset_P`.
+- Output activity on the board: 0.50 spikes per frame over the twelve pitch outputs (0.56 for `A_vocalset_P`).
+- A second build that also shows a fixed text on the EVK display (`build_banner.py`) uses 25.59 % RAM and
+  matches the reference on all 1,451 windows as well, on a single boot.
+
+Reading: training under the chip's rules gave about 6 points on VocalSet songs on the board. The other two
+sets moved by less than the seed spread Simon reports (0.02 to 0.04). The row "the laptop trainer's original
+rules" is what earlier tables call "as trained"; for this model it is not how it was trained.
+
+`snn_numpy.py`, the laptop's SNN fallback, runs the trainer's original rules. Under them this model gives
+different spikes (393 against 420 on the import-check recording, F1 0.335). Use it on the chip, not in
+`live.py --evidence snn:`.
+
+All figures of this section in one place: `HARDWARE_BENCHMARK.md`.
+
+## 8. What the live note-tracking demo asks of the next model
+
+On 2026-10-08 the demo goal changed: the synth plays the note that is sung, in any song
+(`--selector pitch`), instead of accompanying Amazing Grace. Everything here is *suggestion*, not measurement,
+unless a number is given.
+
+1. **The output has no octave.** The twelve pitch outputs name a pitch class. The live tracker takes the
+   class from the chip and picks the octave on the laptop from the 48 bands. A model that also reports
+   the octave would let the chip decide the whole note.
+2. **There is no accuracy figure for live singing.** Dataset frame accuracy is 0.38 to 0.59. In three
+   3-minute live runs on the board (speakers on, so the synth fed back into the microphone) the median
+   tracked note lasted 0.30 to 0.34 s and 38 to 45 % of notes lasted under 0.3 s. Nobody scored the notes.
+   One short sung take with known notes, recorded once and replayed through every model, would give a number.
+3. **Steady output matters more than frame accuracy here.** The tracker averages 12 frames and switches
+   when another class has led for 6 frames. A loss that rewards a margin between the best and the
+   second-best output (section 4, item 5) would help this demo directly.
+4. **The delay comes from the window scheme, not from the network.** Sending a 2 s window every 0.5 s
+   costs about 1 s from sound to note. A model trained to keep its state from frame to frame, without
+   the reset, would allow feeding single frames. This has not been tried.
+
 ## Log
+
+- **2026-10-08, late evening** `A_vsP_chip_shift3`, trained under the chip's rules, run on the board: all
+  1,451 windows identical to the reference, pitch accuracy 0.577 / 0.591 / 0.378 (section 7). The 338-window
+  limit is explained and fixed; start-up handshake failures are retried automatically but not fixed
+  (section 6). The demo goal changed to direct note tracking; section 8 lists what that asks of the next model.
 
 - **2026-10-08, event cleanup** Added a repository-local pending-ping drain; six physical windows
   still match exactly. Long-run validation started with descriptor/event counters.

@@ -1,6 +1,6 @@
 # How the sing-along network got onto the chip: the process, step by step
 
-Written 2026-10-08. This is the story of Phase B in the order it happened: what was tried, what
+Written 2026-10-08, continued the same evening (steps 6 to 11). This is the story of Phase B in the order it happened: what was tried, what
 was found, what was decided and why. For the current state and how to continue, read
 `NEXT_SESSION.md`. For numbers meant for whoever trains the next model, read `TRAINING_FEEDBACK.md`.
 For running the live loop, read `LIVE_CHIP.md`.
@@ -116,21 +116,121 @@ runs that worked had the SDK's communication logging switched on. The audio was 
 exact, 814 frames delivered, about 1.26 s from sound to MIDI, of which 1.25 s is the deliberate
 playout delay. It was 15 seconds of room sound; nobody sang.
 
-**E. Multi-minute stability. Failed (board), and the failure is a fixed limit.** The run stopped after
+**E. Multi-minute stability. Failed (board), and the failure is a fixed limit (solved in step 6).** The run stopped after
 337 windows. A direct test with back-to-back windows and no audio stopped after 338 with the same
 error. The same count twice means the limit belongs to the connection: about 2 minutes 49 seconds of
 chip operation per boot at one update every half second. Until the limit, every window was exact.
 
 The software-only baseline path ran for 185 seconds without a problem and is one option away.
 
+## Step 6. The limit and the start-up failure, read from the SDK's source
+
+- **The 338-window limit.** Talamo creates a new connection manager for every call and never collects
+  its last ping replies. Each one keeps an operating-system event handle open: three per window. The
+  SDK's native library waits on these handles with `select()`, which only works for handle numbers below
+  1,024. With about 11 handles open at rest, (1,024 − 11) / 3 ≈ 338. A parallel session added
+  `transport_events.py`, which collects the leftover replies after each window (commit `f91a1b0`).
+  **Board:** the 185 s run then completed, 366 of 366 windows exact, with the number of open handles
+  constant at 11. Later the same evening 1,451 windows ran on one boot.
+- **The start-up failure.** After a boot, host and board do a handshake in the native library. The
+  board broadcasts until it is answered; the host answers once and never repeats it. If that exchange
+  fails, nothing recovers on that boot, and the SDK reports "waiting for sync" after its pings time out.
+  The bridge's log shows that after every boot the SDK reconnects and switches the serial speed to
+  115,200 and back to 1,000,000 while the board is already sending. Whether that is what breaks the
+  exchange is **not established**. It fails in roughly one start in three.
+
+## Step 7. A demo that can be seen and heard
+
+- Milestone D had "passed", but the project owner had seen and heard nothing. Taken apart, it had shown
+  that MIDI messages were generated and that a GarageBand port accepted them. Nobody had checked that
+  GarageBand did anything with them, and nobody had listened.
+- GarageBand's last project has one audio track and no instrument, so MIDI had nothing to play. That is
+  read from the project file; it is not proven that this project was open during the test.
+- This session could start GarageBand and see its MIDI port, but could not see or click inside it.
+- **Decision (by the project owner):** drop the GarageBand dependency. FluidSynth and a SoundFont were not
+  installed, so a small synth on `sounddevice` came first (`synth_sink.py`): nothing to install, sound made
+  in the audio callback thread. **The owner heard it.**
+- `live_view.py` serves a page with level, note, mode, round trip, delay and errors. It wraps the loop
+  from outside: the sink and the selector get the same calls as before.
+
+## Step 8. The goal changes: the sung note, not an accompaniment
+
+- The loop had been built around the team's score follower, which knows Amazing Grace and plays the
+  chord written over the current position. The owner's goal is different: sing any note, hear that note.
+- `pitch_tracker.py` replaces the selector for this (`--selector pitch`); everything up to the chip's
+  output is unchanged. The network has twelve pitch-class outputs and no octave, so the octave is chosen
+  on the laptop from the 48 bands.
+- **Software and board:** a generated tone sequence is tracked note for note, octave included, in both
+  modes. On a recording of singing, chip and baseline agree on the note in 47 % of frames. Nothing has
+  been scored against known notes.
+- **Why the note is a second late on the chip.** Not computation: a 2 s window is sent every 0.5 s, the
+  round trip is 0.38 s (most of it the serial transfer of the window), and every frame is played at a
+  fixed delay that covers both. One frame of the network is 64 ms of audio, which is where shorter figures
+  come from; they would apply to a chip application that is fed frame by frame and keeps its state.
+
+## Step 9. Making runs safe, one approved step at a time
+
+From here the owner asked for a fixed routine: inspect, propose with measurable criteria, implement only
+after approval, report the actual results including failures, stop.
+
+| Step | Why | Result |
+| --- | --- | --- |
+| 1. Board lock | a check started during a live run crashed its chip application | second user refused before anything is sent; first session unharmed, 60 of 60 exact (board) |
+| 2. Worker timeout and failure detection | the same incident left the loop hanging for 5 minutes: it closed the worker's output pipe while a thread was still reading it | frozen worker: error on the page after 3.0 s, program exits, nothing force-killed (board) |
+| 3. Notes off and metrics | notes were released only after waiting for threads, metrics were written last and could be lost | notes off 0.2 s after a failure, metrics kept, partial file every 10 s (board and software) |
+
+One criterion stayed open: whether the 10 s checkpoint costs late frames. Three 60 s runs each way gave
+1, 0, 2 late frames before and 19, 0, 5 after, on a Mac under changing load. `--checkpoint 0` turns it off.
+
+## Step 10. Simon's model trained under the chip's rules
+
+- `A_vsP_chip_shift3` is the answer to the feedback of step 2: same network, trained with the chip's rules.
+- **Software:** import check passed; expected accuracy 0.577 / 0.591 / 0.378.
+- **Board:** all 1,451 test windows identical to the reference; accuracy 0.577 / 0.591 / 0.378, against
+  0.516 / 0.589 / 0.364 for `A_vocalset_P`. Same RAM (23.23 %) and the same time per window.
+- It is an option (`--model`), not the default. Three 3-minute live runs with the owner singing completed,
+  two on this model and one on `A_vocalset_P`; what they sounded like was not recorded, and the takes
+  were not sung alike.
+- `HARDWARE_BENCHMARK.md` collects the figures for the presentation.
+
+## Step 11. A text on the board's display
+
+- Wanted: something on the board that shows it is working, without making the demo slower. Showing the
+  detected note would redraw the display in every window; a fixed text is drawn once. The fixed text was chosen.
+- The SDK's display step expects a number to look up and ends the pipeline, so it could not simply be
+  added. `banner/` holds a small pass-through step instead: it copies each frame and draws the text with
+  the first one. Its first version made the SDK buffer whole windows; declaring the same frame-by-frame
+  input as the encoder fixed that.
+- **Board:** 300 random windows identical, median 0.366 s; a recording through the live loop 46 of 46 with
+  and without the banner. The owner saw the text.
+- The whole test set took four tries. Through `board_check.py`, the first try matched two sets (939
+  windows) before a start failed and the script's clear-and-reboot was rejected by the board's loader;
+  the second try failed the same way at its first start. On one boot with the SDK's logging off, the run
+  stalled between window 300 and 399. On one boot with logging on, as in the live loop: **1,451 of 1,451**.
+
+## Mistakes in steps 6 to 11, and what they changed
+
+1. A board check was started while a live run was using the board. It crashed the run. Hence the lock.
+2. `eval_modes.py` and `board_check.py` write tracked result files in place; running them for the new model
+   overwrote the old model's records. Both were restored from git; the quirk is now written down.
+3. A failed run was first described from the last lines of its log ("failed at its first boot"). The whole
+   log showed two sets had matched before the failure. The report was corrected.
+4. A test script waited on the board without a time limit and saved results only at the end. It sat for
+   34 minutes and kept nothing. It now has a limit per window and saves after every set.
+5. Two test commands were malformed and ran nothing. Both were noticed from their output and rerun.
+6. The on-chip front-end was described as firmware still to be written. A portable C version already
+   exists in `jan/singalong/kernels_c/bands/`; it has not been built for the board.
+
 ## Where it stands
 
 | | |
 | --- | --- |
-| Weights on the chip compute the same as the reference | proven on the board, 1,451 windows |
-| Live loop, microphone to MIDI through the chip | works for up to about 2 min 49 s per boot |
-| Start-up | unreliable; only validated with debug logging on |
-| A person singing, and listening to the violin | **untested** |
+| Weights on the chip compute the same as the reference | proven on the board for both models, 1,451 windows each |
+| Live loop, microphone to sound through the chip | works; longest single boot 1,451 windows; stops cleanly on any board fault |
+| Start-up | handshake fails about one time in three; retried automatically, not fixed |
+| The sung note on a synth, live view, text on the display | working; sound and display confirmed by the owner |
+| How well it tracks a person singing | **not measured** |
+| Delay from voice to note on the chip | about 1 s, by design of the window scheme |
 
 ## What was learned along the way
 
@@ -142,18 +242,30 @@ The software-only baseline path ran for 185 seconds without a problem and is one
 4. **Prove the chip against a reference first, then build the application around it.** After step 4,
    every later problem could be assigned to the transport or the timing, never to the network.
 5. **A count that repeats points at a resource limit.** The 338-window stop looked like a stability
-   problem until it was reproduced without audio.
+   problem until it was reproduced without audio. The count itself, three handles per window up to 1,024,
+   then named the resource.
 6. **Keep a frozen fallback.** The voice demo stayed runnable throughout, outside the repository.
 7. **Say what a test used.** "Prerecorded audio passed" meant a test tone; "microphone passed" meant
    room noise. Both are true and neither is singing.
+8. **"Passed" has to say what a person saw or heard.** A message that was sent is not a sound.
+9. **Check the goal before polishing the route.** The loop followed one song very carefully; the owner
+   wanted the sung note.
+10. **One user of the board needs a lock, not care.**
+11. **Every wait on the board needs a time limit, in test scripts too, and results should be saved as
+    they come.**
+12. **Add new things as options and leave the validated path alone.** Each change could be compared with
+    the run before it, and undone.
+13. **Test in the configuration the demo uses.** The long run passed with the SDK's logging on, as the
+    demo has it, and stalled with it off.
 
 ## Open, in order
 
-1. Decide how to live with the 338-window limit: short performances with a restart in between, a
-   planned reconnect with a visible switch to the baseline, a slower update, or finding a way to
-   reopen the connection without a reboot.
-2. Measure start-up reliability over repeated starts.
-3. Rehearse with a person singing and someone listening.
+1. Have a person sing and write down what is heard; for a number, one recorded take with known notes.
+2. The delay of about 1 s: accept it, or build a chip application that is fed in shorter pieces.
+3. The start-up handshake, which is retried but not understood.
+4. Why a long run without the SDK's logging stalled.
+
+Details and the current commands: `NEXT_SESSION.md`.
 
 ## Files, by step
 
@@ -167,4 +279,10 @@ The software-only baseline path ran for 185 seconds without a problem and is one
 | 5 B | `windowing.py`, `test_windowing.py` |
 | 5 C, D | `board_worker.py`, `live_chip.py`, `make_test_audio.py`, `prerecorded_check.json`, `chip_microphone.json`, the `startup_*.json` failure records |
 | 5 E | `chip_stability.json`, `check_call_limit.py`, `call_limit.json`, the `baseline_*.json` fallback checks |
+| 6 | `transport_events.py`, `test_transport_events.py`, `persistent_event_cleanup_check.json`, `chip_stability_event_cleanup.json`, `chip_microphone_event_cleanup.json`, `startup_failure_event_cleanup.json` |
+| 7 | `synth_sink.py`, `live_view.py`, `midi_check.py` |
+| 8 | `pitch_tracker.py`, `results/live_2026-10-08/pitch_tracker_*.json` |
+| 9 | `board_lock.py`, `test_board_lock.py`, `fake_worker.py`, `test_worker_failure.py`, `test_shutdown.py`, `results/live_2026-10-08/step1_*.json` to `step3_*.json` |
+| 10 | `handoff/runs/A_vsP_chip_shift3/`, `results/A_vsP_chip_shift3/`, `HARDWARE_BENCHMARK.md`, `results/live_2026-10-08/demo_*.json`, `step4_*.json` |
+| 11 | `build_banner.py`, `banner/`, `check_banner.py`, `banner_check.json`, `results/A_vsP_chip_shift3/banner_*.json`, `results/live_2026-10-08/step5_*.json`, `final_smoke.json` |
 | All | `NEXT_SESSION.md`, `LIVE_CHIP.md`, this file |
