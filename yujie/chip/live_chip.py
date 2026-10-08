@@ -155,6 +155,7 @@ class LiveRun:
                             skipped_updates=0, startup_frames_omitted=0, duplicate_frames=0,
                             captured_frames=0, delivered_frames=0, late_outputs=0, queue_peak=0,
                             connection_failures=0, recoveries=0, feature_nonzero_frames=0,
+                            slow_round_trips=0, longest_slow_streak=0,
                             pcm_peak=0.0, pcm_clipped_samples=0)
         self.epoch = None
         self.stopped_at = None
@@ -247,6 +248,7 @@ class LiveRun:
     def infer(self, client):
         try:
             update, last, slow = 0, None, 0
+            slow_limit = getattr(self.a, 'slow_limit', 3)
             baseline = ev.BaselineEvidence() if self.a.mode == 'baseline' else None
             while not self.stop.is_set():
                 end = window_end(update, self.a.period) if client else update + 1
@@ -283,8 +285,10 @@ class LiveRun:
                         if key in response:
                             self.metrics[key] = response[key]
                     slow = slow + 1 if response['host_roundtrip_seconds'] > self.a.period else 0
-                    if slow >= 3:
-                        raise RuntimeError('Three consecutive round trips exceeded update period')
+                    self.metrics['slow_round_trips'] += int(slow > 0)
+                    self.metrics['longest_slow_streak'] = max(self.metrics['longest_slow_streak'], slow)
+                    if slow >= slow_limit:
+                        raise RuntimeError(f'{slow} consecutive round trips exceeded update period')
                     for index, rate in zip(indices, rates):
                         row = rows[int(index) - (end - 125)]
                         self.put((int(index), rate[12:24], row[2], row[3], row[1]))
@@ -492,6 +496,8 @@ def main():
     ap.add_argument('--model', default=None, help=f'chip: imported model under data/runs/<name>_talamo (default {DEFAULT_MODEL})')
     ap.add_argument('--banner', action='store_true', help='chip: use the application that shows a fixed text on the EVK display')
     ap.add_argument('--checkpoint', type=float, default=10.0, help='seconds between partial metrics files; 0 turns them off')
+    ap.add_argument('--slow-limit', type=int, default=3,
+                    help='chip: consecutive round trips longer than the period before the run stops')
     ap.add_argument('--window-timeout', type=float, default=3.0, help='chip: seconds to wait for one window before stopping')
     ap.add_argument('--start-attempts', type=int, default=3, help='chip: board starts tried when the handshake fails')
     ap.add_argument('--bpm', type=float, default=80)
@@ -503,6 +509,8 @@ def main():
         ap.error('Chip mode: use period 0.5..1 s and playout-delay >= period + 0.4 s')
     if a.playout_delay < .05:
         ap.error('Use playout-delay >= 0.05 s')
+    if a.slow_limit < 1:
+        ap.error('Use slow-limit >= 1')
     def stop(*_):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, stop)
