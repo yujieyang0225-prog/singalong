@@ -187,14 +187,23 @@ list, including after RAM clearing and with active input first. A standalone sil
 failed, whereas active-first standalone checks passed twice; this does not establish silence as the
 root cause. The successful worker path enables SDK communication diagnostics (`--worker-debug`),
 checks deterministic active input against the reference, then checks silence/reset before accepting
-audio. Two consecutive diagnostic worker starts passed (a four-window run and the 20-window run).
+audio. Three consecutive diagnostic worker starts passed (four-window, 20-window, and live-microphone runs).
 The exact cause of the earlier failures is unresolved; logging is not claimed as a root-cause fix.
 Warnings about protocol timeout/reset are now surfaced even though the container suppresses warnings.
 There are no hidden reboots/retries during inference. Preserve startup failure records for diagnosis.
 
-**Milestone D is in progress:** a 15-second microphone -> physical chip -> GarageBand MIDI test with
-per-window reference comparison and 1.25 s playout buffering. No result claimed before completion.
-**Milestone E chip stability remains pending.**
+**Milestone D passed on the physical board and live MacBook microphone.** `chip_microphone.json`:
+15 seconds, 26/26 windows exactly match the chip-rule reference, 814 unique frames delivered to the
+existing score follower and GarageBand MIDI sink. Capture ran at 16 kHz; 131 feature frames were
+nonzero, no clipping or capture errors. No skipped updates, duplicates, or outputs >50 ms late.
+Boot: 5.920 s; median board round trip 0.360 s (maximum 0.384 s); median host round trip 0.381 s.
+Measured audio-frame-end to renderer/MIDI-send completion: median **1.2547 s**, p95 1.2599 s,
+maximum 1.2920 s, including 1.25 s playout. CoreAudio reported 0.2386 s input buffering.
+This was a functional microphone test, not a singing-quality or pitch-accuracy evaluation; downstream
+GarageBand/DAC/acoustic latency and instrument sound were not measured. No microphone audio saved.
+
+**Milestone E is running:** 185 seconds of prerecorded physical-chip inference, checking each window
+against the reference. The long chip test is not yet claimed complete.
 
 **Independent fallback checks passed:** 12 seconds of prerecorded baseline -> score follower -> violin
 WAV (747 frames); 12 seconds of MacBook microphone -> baseline -> GarageBand MIDI (747 frames,
@@ -207,6 +216,9 @@ Usage, interface details and reproduction commands: `yujie/chip/LIVE_CHIP.md`.
 Nothing has been flashed; the model, frozen voice demo and original SDK container remain unchanged.
 
 ## Log
+
+- **2026-10-08, Milestone D** Physical-chip microphone/MIDI integration passed: 26/26 exact windows;
+  measured median audio-to-renderer latency 1.2547 s. Multi-minute chip stability test started.
 
 - **2026-10-08, Milestone C** Prerecorded physical-chip integration passed: 20/20 exact windows;
   timing and startup reliability caveat updated. Microphone hardware test started.
