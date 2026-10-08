@@ -39,6 +39,7 @@ What has and has not been shown:
   repeats at the same count.
 
 Numbers and explanations: `yujie/chip/TRAINING_FEEDBACK.md` (kept current, pushed after every change).
+How it got here, step by step, with the decisions and mistakes: `yujie/chip/PROCESS.md`.
 
 **Model:** `handoff/runs/A_vocalset_P/weights_int8.npz`, pitch-only, 48 bands -> 80 recurrent -> 24
 outputs (12 to 23 are pitch classes C to B; 0 to 11 are silent). Pitch accuracy on the board:
