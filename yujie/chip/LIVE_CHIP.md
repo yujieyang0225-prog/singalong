@@ -4,7 +4,7 @@ The Mac runs audio capture, the existing `StreamingFrontEnd`, window scheduling,
 sound. `singalong_sdk` runs a persistent physical-board worker. The board runs the IF encoder and the
 recurrent network. No board microphone firmware is involved.
 
-Updated 2026-10-08, 23:40. State and open problems: `NEXT_SESSION.md`.
+Updated 2026-10-09, 01:15. State and open problems: `NEXT_SESSION.md`.
 
 ## Start and fallback
 
@@ -83,10 +83,36 @@ succeeds even when nothing sounds. `midi_check.py` sends a test phrase.
 
 ## What the page shows
 
-Mode (chip or laptop), run state and errors; microphone level and whether the front-end counts the frame
-as voice; the tracked note; the twelve pitch-class values coming from the chip or the baseline; the notes
-sounding, on a keyboard from E2 to E6, and the last MIDI messages; chip round trip and number of windows;
-delay from sound to note; late frames, skipped updates and connection errors. The page only observes.
+The page has the look of the team's slide deck and fits 1280 x 720 without scrolling; it scales with the
+screen like a slide. Each colour has one meaning: blue is what the chip hears, green what the tracker
+decides, rust-orange what is played. In laptop-only mode nothing is blue.
+
+- **Header:** the mode (`CHIP · Pulsar C1` or `LAPTOP ONLY`) and the run state in words; under the rule, the
+  error message when a run has failed.
+- **Microphone:** the level in dB, a meter from -70 to 0 dB, and "Voice detected" or "Silence" (the
+  front-end's voiced flag). It tells sound reaching the laptop apart from the network recognising a pitch.
+- **Note:** the tracked note, what the tracker is doing ("Silence", "Hearing C#", "Note held 1.2 s",
+  "Releasing") and the loudness (expression) sent to the synth.
+- **What the chip hears:** the twelve pitch-class values, with the strongest one labelled.
+- **MIDI piano roll:** every note sent in the last 15 seconds, one row per semitone next to a keyboard,
+  under a ruler in seconds with "now" at the right edge. The pitch range follows the notes shown. Notes
+  shorter than 150 ms are drawn lighter; none is merged or left out.
+- **Raw SNN output:** under the roll, on the same time axis, the strongest of the twelve pitch classes in
+  every frame. What differs between this strip and the roll is the tracker's work.
+- **Footer:** the model and its 104 spiking neurons, chip round trip, delay from voice to note (the
+  measured median), late frames, skipped updates, slow round trips, connection errors.
+
+Only a running loop shows live values. While it is starting, stopped, failed or not reachable, the readouts
+are empty and the roll keeps its last picture, faded, under a label that says why; a new run starts with an
+empty roll. The page only observes: it asks for `/state` once every 100 ms and has no other timer. `/state`
+holds at most 15 s of notes and raw output and stays under 12 kB (`test_live_view.py`).
+
+Checked on 2026-10-09. Software, on the tone file: the notes in `/state` match the console within 0.01 s,
+and a 60 s run had 0 late frames of 3,747 with the page open and without. On the board, the recording
+through the chip with the page open: 46 of 46 windows exact, no late frame, median round trip 0.398 s
+(`data/live_chip/ui_recheck.json`, on this Mac only). During that run the page showed the chip mode and blue
+marks in the strip (read from the page by a script). Nobody has yet judged the page by eye on a projector,
+and it has not been used with the microphone on the chip.
 
 ## What protects a run
 
