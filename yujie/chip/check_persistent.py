@@ -16,6 +16,7 @@ def main():
     ap.add_argument("run", type=Path)
     ap.add_argument("--npz", type=Path, required=True)
     ap.add_argument("--output", type=Path, default=Path(__file__).with_name("persistent_check.json"))
+    ap.add_argument("--silence-first", action="store_true", help="Diagnostic only: prepend silence before the first active input")
     a = ap.parse_args()
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     rng = np.random.default_rng(42)
@@ -23,6 +24,8 @@ def main():
     z = np.zeros_like(x)
     tests = [("random_A", x), ("silence_after_A", z), ("repeat_A", x),
              ("full_scale", np.full_like(x, 100)), ("silence_after_full", z), ("repeat_A_again", x)]
+    if a.silence_first:
+        tests.insert(0, ("silence_first", z))
     report = dict(tested_on="physical Pulsar C1", talamo="4.7.1", application_boots=0, calls=[])
     try:
         with PersistentBoard(a.run, a.npz) as board:

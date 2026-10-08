@@ -1,0 +1,42 @@
+{
+  "mode": "baseline",
+  "source": "wav:data/live_chip/tones.wav",
+  "period_seconds": 0.5,
+  "playout_delay_seconds": 1.0,
+  "windows": [],
+  "capture_status": [],
+  "skipped_updates": 0,
+  "startup_frames_omitted": 0,
+  "duplicate_frames": 0,
+  "captured_frames": 747,
+  "delivered_frames": 747,
+  "late_outputs": 0,
+  "queue_peak": 63,
+  "connection_failures": 0,
+  "recoveries": 0,
+  "feature_nonzero_frames": 643,
+  "completed": true,
+  "rendered_file": "data/live_chip/baseline_violin.wav",
+  "wall_seconds": 14.224851417005993,
+  "host_cpu_seconds": 2.3643110000000003,
+  "host_peak_rss_bytes": 76824576,
+  "trailing_frames_without_full_update": 0,
+  "frontend_seconds_summary": {
+    "min": 1.5749974409118295e-05,
+    "median": 0.00030020851409062743,
+    "p95": 0.0008921229396946719,
+    "max": 0.006229249993339181
+  },
+  "output_latency_seconds_summary": {
+    "min": 1.0007405420183204,
+    "median": 1.0047089590225369,
+    "p95": 1.009544604428811,
+    "max": 1.021316416998161
+  },
+  "output_lateness_seconds_summary": {
+    "min": 3.8209022022783756e-05,
+    "median": 0.0022345420147757977,
+    "p95": 0.004408546522608944,
+    "max": 0.019454875000519678
+  }
+}

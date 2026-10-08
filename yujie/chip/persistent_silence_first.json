@@ -1,0 +1,9 @@
+{
+  "tested_on": "physical Pulsar C1",
+  "talamo": "4.7.1",
+  "application_boots": 1,
+  "calls": [],
+  "boot_seconds": 5.955847835997702,
+  "passed": false,
+  "error": "RuntimeError: Board returned no complete sample; startup/transport failed. Stop and inspect the connection; no automatic reboot is performed."
+}

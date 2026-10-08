@@ -7,6 +7,7 @@ from contextlib import ExitStack
 from pathlib import Path
 import threading
 import time
+import warnings
 
 import numpy as np
 import torch
@@ -68,7 +69,16 @@ class PersistentBoard:
             t = time.perf_counter()
             try:
                 # Materialize while the same connection context is still active.
-                out = np.asarray(self.assembled._execute_pipeline(self.dataset(x), verbose=0).data_as_numpy())
+                with warnings.catch_warnings():
+                    # The container globally suppresses warnings. Surface protocol
+                    # timeouts/reset failures instead of hiding their cause.
+                    warnings.filterwarnings('error', category=UserWarning,
+                                            module=r'talamo\.pipeline\.embedded\.utils\.board_comm')
+                    result = self.assembled._execute_pipeline(self.dataset(x), verbose=0)
+                if len(result) != 1:
+                    raise RuntimeError('Board returned no complete sample; startup/transport failed. '
+                                       'Stop and inspect the connection; no automatic reboot is performed.')
+                out = np.asarray(result.data_as_numpy())
                 # The compiled HostOutput sync_count is 126: 125 input frames
                 # plus one pipeline flush frame. Match board_check.py's [:125].
                 if out.shape != (1, 126, 24):

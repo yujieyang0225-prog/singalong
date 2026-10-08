@@ -1,0 +1,84 @@
+{
+  "mode": "physical-chip",
+  "source": "wav:data/live_chip/tones.wav",
+  "period_seconds": 0.5,
+  "playout_delay_seconds": 1.0,
+  "windows": [
+    {
+      "inference_seconds": 0.39337095800146926,
+      "host_roundtrip_seconds": 0.4222394580137916,
+      "exact_reference": null,
+      "update": 0,
+      "end_frame_exclusive": 125,
+      "submitted_seconds": 2.0526227499940433
+    },
+    {
+      "inference_seconds": 0.38728033400548156,
+      "host_roundtrip_seconds": 0.3949753749766387,
+      "exact_reference": null,
+      "update": 1,
+      "end_frame_exclusive": 157,
+      "submitted_seconds": 2.5642237499996554
+    },
+    {
+      "inference_seconds": 0.39167629199801013,
+      "host_roundtrip_seconds": 0.411234291997971,
+      "exact_reference": null,
+      "update": 2,
+      "end_frame_exclusive": 188,
+      "submitted_seconds": 3.058873332978692
+    },
+    {
+      "inference_seconds": 0.37110279200715013,
+      "host_roundtrip_seconds": 0.3865726249932777,
+      "exact_reference": null,
+      "update": 3,
+      "end_frame_exclusive": 219,
+      "submitted_seconds": 3.5566573749820236
+    }
+  ],
+  "capture_status": [],
+  "skipped_updates": 0,
+  "startup_frames_omitted": 93,
+  "duplicate_frames": 0,
+  "captured_frames": 247,
+  "delivered_frames": 126,
+  "late_outputs": 0,
+  "queue_peak": 38,
+  "connection_failures": 0,
+  "recoveries": 0,
+  "feature_nonzero_frames": 179,
+  "pcm_peak": 0.204681396484375,
+  "pcm_clipped_samples": 0,
+  "type": "ready",
+  "boot_seconds": 5.936018377993605,
+  "prime_seconds": 0.7239454590016976,
+  "startup_silence_seconds": 0.35410437498649117,
+  "startup_active_exact": true,
+  "startup_silence_exact": true,
+  "application_boots": 1,
+  "completed": true,
+  "note_ons": 3,
+  "wall_seconds": 24.3786839999957,
+  "host_cpu_seconds": 0.426509,
+  "host_peak_rss_bytes": 67076096,
+  "trailing_frames_without_full_update": 28,
+  "frontend_seconds_summary": {
+    "min": 1.333397813141346e-05,
+    "median": 0.0002549795026425272,
+    "p95": 0.0015056354503030747,
+    "max": 0.06967183400411159
+  },
+  "output_latency_seconds_summary": {
+    "min": 1.000769832986407,
+    "median": 1.0054476664954564,
+    "p95": 1.012571624982229,
+    "max": 1.0178521669877227
+  },
+  "output_lateness_seconds_summary": {
+    "min": 9.420799324288964e-05,
+    "median": 0.0024186044902307913,
+    "p95": 0.0058616874885046855,
+    "max": 0.01204566701198928
+  }
+}

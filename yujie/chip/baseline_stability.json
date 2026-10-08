@@ -1,0 +1,44 @@
+{
+  "mode": "baseline",
+  "source": "wav:data/live_chip/tones.wav",
+  "period_seconds": 0.5,
+  "playout_delay_seconds": 1.0,
+  "windows": [],
+  "capture_status": [],
+  "skipped_updates": 0,
+  "startup_frames_omitted": 0,
+  "duplicate_frames": 0,
+  "captured_frames": 11559,
+  "delivered_frames": 11559,
+  "late_outputs": 0,
+  "queue_peak": 64,
+  "connection_failures": 0,
+  "recoveries": 0,
+  "feature_nonzero_frames": 10672,
+  "pcm_peak": 0.204681396484375,
+  "pcm_clipped_samples": 0,
+  "completed": true,
+  "note_ons": 151,
+  "wall_seconds": 186.18393633299274,
+  "host_cpu_seconds": 32.33407,
+  "host_peak_rss_bytes": 81887232,
+  "trailing_frames_without_full_update": 0,
+  "frontend_seconds_summary": {
+    "min": 1.5874975360929966e-05,
+    "median": 0.00022458299645222723,
+    "p95": 0.0006158082775073119,
+    "max": 0.019227459008106962
+  },
+  "output_latency_seconds_summary": {
+    "min": 1.0006307500007097,
+    "median": 1.0046049589873292,
+    "p95": 1.0081905130908126,
+    "max": 1.04301354198833
+  },
+  "output_lateness_seconds_summary": {
+    "min": 2.0500010577961802e-05,
+    "median": 0.002459041977999732,
+    "p95": 0.0038292922894470395,
+    "max": 0.02957612497266382
+  }
+}

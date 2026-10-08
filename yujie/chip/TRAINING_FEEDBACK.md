@@ -173,25 +173,43 @@ and delivers each new frame to the existing selector once. Startup omits 93 fram
 frames remain contiguous. A one-second playout buffer preserves 16 ms selector/renderer pacing.
 Its delay must not be described as the 0.34 s board inference time.
 
-**Milestone C is blocked pending investigation.** Two worker startup attempts returned an empty
-sample list at the initial silence inference (`IndexError` during SDK raster conversion), including
-one attempt after the documented RAM-only clearing procedure. No prerecorded audio window reached
-the board worker successfully. Differences from the successful standalone check include silence as
-the first input and redirected SDK stdout. The exact cause is not yet established. Hardware retries
-were stopped under the requested stopping condition; the user subsequently requested continuation.
-Failure records: `startup_failure.json`, `startup_failure_after_clear.json`. The first record predates
-the startup failure counter fix; its zero counter is not evidence of a successful connection.
+**Milestone C passed on the physical board with communication diagnostics enabled.**
+`prerecorded_check.json` records 12 seconds of deterministic audio through the existing streaming
+frontend, physical chip, score follower and violin WAV renderer: 20/20 windows match `chipref.CHIP`
+exactly, 626 unique frames delivered, zero skipped updates, duplicates, or outputs >50 ms late.
+Median SDK inference round trip was 0.369 s (maximum 0.399 s); median Mac-to-worker round trip,
+including reference verification, was 0.390 s (maximum 0.420 s). One RAM boot took 5.891 s.
+Measured audio-frame-end to renderer completion: median 1.0046 s, p95 1.0082 s, maximum 1.0248 s,
+including the intentional 1 s playout delay. This is not acoustic/DAC latency.
 
-**Independent fallback checks:** 12 seconds of deterministic prerecorded audio passed the existing
-baseline -> score follower -> violin WAV path (747 frames, no duplicates or late outputs >50 ms).
-Measured median audio-frame-end to renderer completion: 1.0047 s, including the intentional 1 s
-playout delay. A 12-second MacBook microphone -> baseline -> GarageBand MIDI run also completed;
-this is software-only fallback, not chip inference, and acoustic output quality was not assessed.
-A longer fallback stability test is in progress. No live-microphone chip or multi-minute chip test
-has passed yet. Nothing has been flashed; the frozen voice demo and original SDK container remain
-unchanged.
+**Startup remains a deployment risk.** Several earlier startup attempts returned an empty sample
+list, including after RAM clearing and with active input first. A standalone silence-first test
+failed, whereas active-first standalone checks passed twice; this does not establish silence as the
+root cause. The successful worker path enables SDK communication diagnostics (`--worker-debug`),
+checks deterministic active input against the reference, then checks silence/reset before accepting
+audio. Two consecutive diagnostic worker starts passed (a four-window run and the 20-window run).
+The exact cause of the earlier failures is unresolved; logging is not claimed as a root-cause fix.
+Warnings about protocol timeout/reset are now surfaced even though the container suppresses warnings.
+There are no hidden reboots/retries during inference. Preserve startup failure records for diagnosis.
+
+**Milestone D is in progress:** a 15-second microphone -> physical chip -> GarageBand MIDI test with
+per-window reference comparison and 1.25 s playout buffering. No result claimed before completion.
+**Milestone E chip stability remains pending.**
+
+**Independent fallback checks passed:** 12 seconds of prerecorded baseline -> score follower -> violin
+WAV (747 frames); 12 seconds of MacBook microphone -> baseline -> GarageBand MIDI (747 frames,
+133 nonzero-feature frames, no clipping/capture errors); and 185 seconds of prerecorded baseline
+stability (11,559 frames, no duplicates, skips, or outputs >50 ms late). Baseline stability median
+latency was 1.0046 s; p95 1.0082 s. These are software-only, not physical-chip results. Acoustic output
+quality was not assessed. No microphone audio is saved.
+
+Usage, interface details and reproduction commands: `yujie/chip/LIVE_CHIP.md`.
+Nothing has been flashed; the model, frozen voice demo and original SDK container remain unchanged.
 
 ## Log
+
+- **2026-10-08, Milestone C** Prerecorded physical-chip integration passed: 20/20 exact windows;
+  timing and startup reliability caveat updated. Microphone hardware test started.
 
 - **2026-10-08, live integration** Persistent connection validated on six deterministic physical-board calls;
   worker startup blocker and independent baseline tests recorded in section 6.
