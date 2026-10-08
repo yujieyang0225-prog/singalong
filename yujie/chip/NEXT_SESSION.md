@@ -1,239 +1,218 @@
-# Start here: state of the sing-along chip work and what comes next
+# Start here: handoff for the sing-along chip work
 
-Updated 2026-10-08, late evening, after direct note tracking, the Python synth, the live view, Simon's
-chip-trained model and the display banner were checked on the board. Read this first in a new session; it
-is meant to be enough to continue without the earlier conversation. Paths are relative to the workspace
-folder `~/TUM/NeuroTUM` unless they start with `/workspace` (inside a container).
+Snapshot of 2026-10-08, 23:40. The pitch is on Friday 9 October, 10:00.
+Paths are relative to `~/TUM/NeuroTUM/agent-pitch-handoff` unless they start with `/workspace` (inside a
+container). Details live in `yujie/chip/LIVE_CHIP.md` (options, timing), `HARDWARE_BENCHMARK.md` (figures
+for the presentation), `TRAINING_FEEDBACK.md` (for the training team) and `PROCESS.md` (history, mistakes).
 
-## 1. Where things stand
+## 1. Architecture and model
 
-**Goal (changed on 2026-10-08):** sing a note, and a synth plays that note, in any song, with the pitch
-network running on the Pulsar chip and the audio front-end on a laptop ("shape 2"). Accompaniment that
-follows Amazing Grace is no longer the goal; it still runs with `--selector score`.
-The pitch is on Friday 9 October, 10:00.
+**Goal:** a person sings or hums a note and a synth plays that note, in any song, with the pitch network
+on the physical Pulsar C1.
 
-| Step | State |
-| --- | --- |
-| Import, rule differences, build, chip equals reference (`A_vocalset_P`) | **done** earlier, all 1,451 test windows identical on the board |
-| 338-window limit of one board session | **fixed**: cause found, leftover events are collected; longest single boot 1,451 windows, all exact |
-| Start-up handshake failure ("waiting for sync") | **not fixed**; automatic clear-and-retry, about one start in three needs it |
-| One user of the board at a time | **done**: board lock |
-| Hung or dead worker | **done**: detected in 3 s, run stops with an error, never hangs |
-| Notes released and metrics kept however a run ends | **done** |
-| Sound without GarageBand | **done**: built-in Python synth; the user has heard it |
-| Live view in the browser | **done** |
-| Direct note tracking (`--selector pitch`) | **works on known tones**, chip and baseline; accuracy on live singing **not measured** |
-| Simon's chip-trained model `A_vsP_chip_shift3` | **verified on the board**: 1,451 of 1,451 identical; 0.577 / 0.591 / 0.378 |
-| Fixed text on the board's display | **verified**: 1,451 of 1,451 on one boot; the user saw the text |
-
-**In one sentence:** the demo runs end to end on the chip with Simon's model, a display banner, a live
-view and its own sound; how well it tracks a person's singing has not been measured, and the note comes
-about one second after the voice.
-
-What has and has not been shown:
-
-- **Heard and seen by the user:** sound from the Python synth, and the text on the board's display.
-  The user's impressions of the live note tracking (steady? right notes?) were not recorded.
-- **No accuracy figure for live singing.** Dataset frame accuracy on the board is 0.38 to 0.59.
-  In three 3-minute live runs the median tracked note lasted 0.30 to 0.34 s; nobody scored the notes.
-- **Live runs used the MacBook speakers**, so the synth fed back into the microphone.
-- **Every long chip session that passed had the SDK's communication logging on** (`--worker-debug`).
-  One 1,451-window run with logging off stalled between window 300 and 399; cause unknown.
-- **GarageBand was never heard.** The project it reopens has one audio track and no instrument, so MIDI
-  had nothing to play. The MIDI path still exists (`--sink midi:GarageBand`); it is not the demo path.
-
-Numbers for the training team: `yujie/chip/TRAINING_FEEDBACK.md`. Benchmark tables for the presentation:
-`yujie/chip/HARDWARE_BENCHMARK.md`. How to run the loop and what its options mean: `yujie/chip/LIVE_CHIP.md`.
-How it got here, with the decisions and mistakes: `yujie/chip/PROCESS.md`.
-
-**Models.** Both are pitch-only, 48 bands -> 80 recurrent -> 24 outputs (12 to 23 are pitch classes C to B).
-
-| Model | Trained under | Pitch accuracy on the board (songs / exercises / DAMP) | Used when |
-| --- | --- | --- | --- |
-| `A_vsP_chip_shift3` | the chip's rules | 0.577 / 0.591 / 0.378 | `--model A_vsP_chip_shift3` (the presentation) |
-| `A_vocalset_P` | the laptop trainer's rules | 0.516 / 0.589 / 0.364 | default when `--model` is left out |
-
-Chance is about 0.08. The folder `grp-gold-neurotum/audio/B_damp_lr0.03` is an **older, wrong** model; do not use it.
-
-## 2. The demo
-
-From `agent-pitch-handoff` on the Mac. Board on USB, boot switch on UART, `evk-bridge` running (section 4).
-
-```bash
-python -u yujie/chip/live_view.py --source mic:1 --mode chip --worker-debug --model A_vsP_chip_shift3 --banner --selector pitch --playout-delay 1.25 --start-attempts 5 --sink synth
+```
+MacBook microphone -> front-end on the laptop (48 semitone bands, one frame per 16 ms)
+  -> latest 2 s window every 0.5 s -> worker in the singalong_sdk container -> Pulsar C1
+     (IF encoder + recurrent SNN 48 -> 80 -> 24, RAM boot, fixed text on the display)
+  -> spikes of outputs 12..23 -> rate over 8 frames -> pitch tracker on the laptop
+     (pitch class from the chip, octave from the 48 bands) -> one-voice renderer
+  -> built-in Python synth (sounddevice) and a live page at http://127.0.0.1:8765
 ```
 
-Then open http://127.0.0.1:8765. Start-up takes about 25 s, or about 35 s more for each start that needs
-a retry. Stop with Ctrl-C.
+**Validated model:** `A_vsP_chip_shift3`, trained by Simon under the chip's rules
+(`handoff/runs/A_vsP_chip_shift3/weights_int8.npz`, md5 `6b47d452dddcd1cdddbe8d4f2a152035`).
 
-- These settings passed a 25 s run on a recording with silent output (46 of 46 windows exact, 0 late frames,
-  `results/live_2026-10-08/final_smoke.json`). With the microphone and the synth, the same settings ran
-  without `--banner` and with a 1.0 s delay. This exact line has not been run with a person singing.
-- **Laptop only, no board:** replace `--mode chip --worker-debug --model A_vsP_chip_shift3 --banner
-  --playout-delay 1.25 --start-attempts 5` with `--mode baseline --playout-delay 0.1`. The note then comes
-  about 0.1 s after the voice. The display banner, if loaded, keeps saying the chip is running; power-cycle
-  the board before showing this mode.
-- **Use headphones** if possible, and held vowels at a slow pace.
-- **If the page shows an error:** it names the cause. Start again; nothing has to be cleaned up by hand.
-  If it says the board is in use, another program holds it; stop that one first.
-
-## 3. Where everything is
-
-| What | Where |
+| Measured on the board | Result |
 | --- | --- |
-| Working copy for this work | `agent-pitch-handoff/`, branch `yujie/singalong-chip`, remote `nc-fortiss/MNH26SVR` |
-| Chip-side code and results | `agent-pitch-handoff/yujie/chip/` |
-| Teammate's handoff (models, test data, notes) | `agent-pitch-handoff/handoff/`, from branch `singalong-pitch-handoff` (do not commit there) |
-| Team code (front-end, selector, trainer) | `agent-pitch-handoff/jan/singalong/`, `simon/` |
-| Imported parameters and built chip applications | `agent-pitch-handoff/data/runs/<model>_talamo/` (git-ignored: rebuild if missing) |
-| Run logs and metrics of the day | `agent-pitch-handoff/data/live_chip/` (git-ignored); the important ones are copied to `yujie/chip/results/` |
-| The voice demo, frozen | `demo-voice-v1/` (outside any repository) |
-| Voice demo source and notes | `grp-gold-neurotum/audio/scene-classification/`, branch `voice-baseline`, **local only** |
-| Team vault | `MNH26SVR/` on `main`: never commit or push there |
+| Test windows identical to the integer reference | 1,451 of 1,451, plain application and banner application |
+| Pitch accuracy, songs / exercises / DAMP | 0.577 / 0.591 / 0.378 (chance about 0.08) |
+| RAM | 23.23 % plain, 25.59 % with the display text |
+| Round trip per 2 s window | about 0.38 s median |
 
-Files in `yujie/chip/`:
+The older `A_vocalset_P` (0.516 / 0.589 / 0.364) is still the default when `--model` is left out.
+Baseline mode (`--mode baseline`) uses the laptop's own pitch estimate and no board.
+
+## 2. Completed steps
+
+| Step | Final status |
+| --- | --- |
+| 1. Board lock (`board_lock.py`) | passed, 6 of 6 criteria |
+| 2. Worker timeout and failure detection | passed; a frozen worker gives an error in about 3 s and the program exits in about 24 s |
+| 3. Notes released, metrics kept | 8 of 9 passed; whether the 10 s checkpoint costs late frames stayed inconclusive (`--checkpoint 0` turns it off) |
+| 4. Simon's model on the board | passed, 8 of 8 |
+| 4.5 Hardware benchmark | written: `HARDWARE_BENCHMARK.md` |
+| 5. Text on the board's display (`--banner`) | passed; the whole test set on one boot, 1,451 of 1,451; the user saw the text |
+| 6. Slow-round-trip limit (`--slow-limit`, default 3) | passed: 26 of 26 software tests; board recording check with the default, 46 of 46 exact, no late frames; three microphone runs with `--slow-limit 6`, longest streak 2, so the limit itself was never reached on the board |
+
+Also done: direct note tracking (`--selector pitch`), the built-in synth (`--sink synth`), the live page
+(`live_view.py`), automatic clear-and-retry at start-up (`--start-attempts`), and the fix of the old
+338-window limit. The user has heard the synth. Nobody has scored the live note tracking.
+
+## 3. Branch, commits, uncommitted changes
+
+- Branch `yujie/singalong-chip`, remote `nc-fortiss/MNH26SVR`. The remote is at `50ea178`
+  (`1886d62` code and results, `50ea178` docs), the last state that was pushed.
+- **Two local commits on top of it, not pushed:** first the `--slow-limit` option with its software tests
+  (`live_chip.py`, `fake_worker.py`, `test_slow_round_trips.py`), then the documentation (`LIVE_CHIP.md`,
+  this file). `git log --oneline -3` shows them. Pushing needs the user's permission.
+- **What the code commit changes:** `--slow-limit N` with default 3, two counters in the metrics
+  (`slow_round_trips`, `longest_slow_streak`), and the error text, which now names the count
+  ("3 consecutive round trips exceeded update period"). Without the option the stop rule is the old one.
+- **Uncommitted on purpose:** `yujie/chip/results/live_2026-10-08/presentation_rehearsal.json`, the metrics
+  of the rehearsal that stopped. The user keeps it local.
+
+## 4. The demo command and its safety settings
+
+Board on USB, boot switch on UART, `evk-bridge` running, `singalong_sdk` container up. From `agent-pitch-handoff`:
+
+```bash
+python -u yujie/chip/live_view.py --source "mic:MacBook Pro Microphone" --mode chip --worker-debug --model A_vsP_chip_shift3 --banner --selector pitch --playout-delay 1.25 --start-attempts 5 --slow-limit 6 --sink synth
+```
+
+Open http://127.0.0.1:8765. Start-up takes about 25 s, plus about 35 s for each retry. Stop with Ctrl-C.
+If Ctrl-C does nothing, `pkill -TERM -f yujie/chip/live_view.py` from another terminal runs the same clean
+shutdown. With `--duration 180` a run stops by itself after 180 s of audio.
+
+- `--worker-debug`: every long run that passed had it on. Keep it.
+- `--start-attempts 5`: the start-up handshake fails in roughly one start in three; each failure is cleared
+  (RAM only) and retried by itself.
+- `--playout-delay 1.25`: the note comes about 1.25 s after the voice. 1.0 s works with more late frames.
+- `--slow-limit 6`: the run stops after six round trips in a row longer than 0.5 s, not three (issue 1).
+- Automatic: board lock, 3 s window timeout, notes released first on any stop, metrics every 10 s.
+- **Microphone by name**: device numbers shift when a monitor or speaker is connected.
+- **Sound output**: the Mac's default output at the moment of starting. Check it just before starting:
+  macOS switches to a Bluetooth device by itself when it reconnects. Do not use a Bluetooth output
+  (issue 11). Measured so far: the built-in speakers and one Bluetooth device, nothing else.
+- **Laptop-only fallback**, no board, note after about 0.1 s:
+
+```bash
+python -u yujie/chip/live_view.py --source "mic:MacBook Pro Microphone" --mode baseline --selector pitch --playout-delay 0.1 --sink synth
+```
+
+The display text stays until the board is power-cycled, also in baseline mode.
+
+## 5. Known issues
+
+1. **Slow-round-trip stop rule.** The loop stops after `--slow-limit` round trips in a row longer than the
+   0.5 s period: 3 by default, 6 in the demo command. With 3, the rehearsal stopped after 464 windows
+   (0.54 s, 1.67 s, 0.62 s), and 10 s earlier it had missed a stop by 13 ms. Among the 3,174 chip windows
+   up to then, 1.2 % were slow and this was the only streak of three. With 6, three microphone runs gave
+   1,529 windows, 17 slow round trips and a longest streak of 2, so the higher limit was never needed on
+   the board; that it rides through the rehearsal's pattern is shown in software only.
+   Two other rules also stop a run and are unchanged: more than three update periods between two processed
+   windows (a single stall of roughly 1.5 to 2 s; "Output gap exceeds valid post-burn-in window"), and the
+   3 s window timeout. The rehearsal's 1.67 s stall was about 0.3 s short of the first of these (calculated).
+   Making a longer single stall recoverable was discussed and deliberately not started.
+2. **Live note tracking is not measured.** In three 3-minute live runs the median tracked note lasted
+   0.30 to 0.34 s, so notes flip often. Dataset accuracy says nothing about humming into a MacBook.
+3. **Sound output.** On a loudspeaker the synth is heard by the microphone and can keep itself going. Its
+   loudness follows the voice, which damps this. A Bluetooth output drifts (issue 11). A louder speaker, a
+   wired speaker and wired headphones are untested.
+4. **About 1 s delay on the chip**, by design of the window scheme. Not a setting.
+5. **Start-up handshake** (SDK-internal) is retried, not fixed.
+6. **The octave is chosen on the laptop.** The network only names the pitch class.
+7. **Runs without `--worker-debug`** are not trusted beyond about 300 windows (one stall, cause unknown).
+8. **`board_check.py --banner`** fails in its own clear-and-reboot; use `check_banner.py --testset` for the
+   banner application.
+9. **MacBook input volume** was at 43 of 100 in the last run and the level was low.
+10. A comment at the top of `live_view.py` still shows an old example command.
+11. **Microphone timestamp drift, unresolved and not investigated.** In microphone runs the frames reach
+    the loop later and later than their timestamps, which uses up the margin of the playout delay: frames
+    are late from a drift of about 0.43 s. Measured in minute 3: 0.24 s on the audible built-in speakers
+    (rehearsal), 0.66 and 0.73 s with a Bluetooth output (nearly every window late from minute 2, and 73 %
+    of all frames in the 410 s run), 0.08 s on the muted speakers with Bluetooth off (no late frame). The
+    cause is unknown, and so is whether the real delay from voice to note grows. A fresh start begins at
+    zero. Table and details: `LIVE_CHIP.md`, "Microphone timestamp drift".
+12. **Ctrl-C did not reach one run** (macOS Terminal window, cause unknown). SIGTERM stopped it cleanly in
+    9 s; see section 4.
+
+## 6. Next task, pending approvals, restrictions
+
+**Nothing is approved to run right now.** When the session ended the user had set these restrictions, and
+they hold until the user lifts them: no code or configuration changes, no installs or downloads, no builds
+or tests, no board access, no retraining, no change to the banner application, no commit, no push.
+
+Decisions waiting for the user:
+
+1. **Push** of the two local commits (section 3). Not approved.
+2. **Sound output for the pitch.** Bluetooth is out by the numbers of issue 11. Whichever output is chosen
+   needs one 3-minute run with the demo command first.
+3. **Sustained monophonic synth.** A read-only feasibility report was delivered. Findings: sustaining
+   without retriggering, release on silence and a simple additive timbre already exist; the gap is note
+   stability. Recommendation: expose the pitch tracker's existing confirmation time, minimum note length and
+   margin as options, add one steadier "humming" setting and an optional timbre; keep loudness following the
+   voice; no confirmation across several chip updates, no glide, no new controller class. Estimated extra
+   delay on note changes: 150 to 250 ms. Proposed checks: host-only note-sequence tests, the generated tone
+   file (known 2 s notes), one short board run, then live humming by the user. Awaiting approval.
+
+Decided by the user on 2026-10-08, do not reopen without asking:
+
+- No board test that pauses the worker (`kill -STOP`). It cannot tell limit 3 from limit 6 and adds a
+  communication risk.
+- The drift of issue 11 is recorded only. No investigation and no change to the audio scheduling before
+  the pitch.
+
+**The user's working rules:**
+
+- Step by step: inspect, propose with measurable acceptance criteria, implement only after approval, report
+  actual results including failures, then stop and wait.
+- Show code and documentation diffs before committing. Never push without explicit permission.
+- RAM boot only; never flash. Never modify the installed SDK. Never retrain or alter a model.
+- Never commit to `main` or to a teammate's branch; work on `yujie/*`.
+- New behaviour is an option; the validated path and the default stay as they are.
+- One program on the board at a time. Never SIGKILL anything that holds the board.
+- Say whether a number is measured on the board, in software, or estimated. Do not say something was heard
+  unless a person heard it.
+- Recorded audio stays out of git. The frozen voice demo (`~/TUM/NeuroTUM/demo-voice-v1/run.sh`) must stay runnable.
+
+## 7. Commands and files
+
+**Software tests** (no board), from `yujie/chip` with `python`:
+`test_windowing.py`, `test_transport_events.py`, `test_worker_failure.py`, `test_shutdown.py`,
+`test_slow_round_trips.py`; in the container:
+`docker exec -w /workspace/yujie/chip singalong_sdk python3 test_board_lock.py`.
+
+**Board checks:**
+
+```bash
+# is anything using the board?
+docker exec singalong_sdk sh -c 'ps -eo pid,args | grep -E "[b]oard_worker|[c]heck_|[c]1util|[b]oard_check"'
+# whole loop on a recording, silent, every window compared (expect 46 of 46 exact, no late frames)
+python -u yujie/chip/live_chip.py \
+  --source "wav:Hackathon/08 Songs/sources/01_Happy_Birthday/audio/624721__asiilanna__happy-birthday.wav" \
+  --mode chip --worker-debug --verify-reference --model A_vsP_chip_shift3 --banner --selector pitch \
+  --playout-delay 1.25 --sink print --duration 25 --metrics data/live_chip/recheck.json
+# whole test set through the banner application on one boot (about 10 minutes)
+docker exec -w /workspace/jan/singalong singalong_sdk python3 -u /workspace/yujie/chip/check_banner.py \
+  /workspace/data/runs/A_vsP_chip_shift3_talamo --npz /workspace/handoff/runs/A_vsP_chip_shift3/weights_int8.npz \
+  --testset --debug-logs
+```
+
+**Setup if something is missing:**
+
+- Bridge on the Mac: `evk-bridge -i <BOARD_ID> --listen 0.0.0.0 --port 1700 --gdb-port 1701`.
+- The container `singalong_sdk` (image `innatera_sdk:2.3.0`, Talamo 4.7.1) mounts this folder at `/workspace`.
+  `data/` is git-ignored, so imported models and built applications exist only on this Mac, under
+  `data/runs/<model>_talamo/`. The commands to recreate the container and to rebuild a model (import,
+  `build_chip.py`, `build_banner.py`) are in this file at commit `50ea178`, section 4:
+  `git show 50ea178:yujie/chip/NEXT_SESSION.md`.
+- `eval_modes.py`, `board_check.py` and `check_banner.py` (without `--testset`) overwrite tracked result
+  files in `yujie/chip/`; copy results away and restore the file.
+
+**Files in `yujie/chip/`:**
 
 | File | Purpose |
 | --- | --- |
-| `live_view.py` | **the demo's entry point**: runs `live_chip.py` unchanged and serves the live page |
-| `live_chip.py` | the loop: capture, windows, board worker, selector, renderer, shutdown, metrics |
-| `pitch_tracker.py` | direct note tracking (`--selector pitch`) and its one-voice renderer |
-| `synth_sink.py` | built-in synth (`--sink synth`); run it alone to hear a test melody |
-| `board_worker.py`, `persistent_board.py`, `transport_events.py` | worker in the SDK container, one-boot adapter, collection of leftover events |
-| `board_lock.py` | one user of the board at a time |
-| `windowing.py` | sliding windows and rates |
-| `build_chip.py`, `build_banner.py`, `banner/` | builds the chip application; the same with a text on the display; the display step's C source |
-| `chipref.py`, `diagnose_import.py`, `eval_modes.py` | integer reference, import diagnosis, expected accuracy without a board |
-| `board_check.py` | test set on the board through the SDK's own batch path (plain applications only) |
-| `check_persistent.py`, `check_call_limit.py`, `check_banner.py` | one-boot checks; `check_banner.py --testset` runs the whole test set on one boot |
-| `midi_check.py` | sends a test phrase to a MIDI port such as GarageBand |
-| `fake_worker.py`, `test_*.py` | software-only tests |
-| `results/` | result files of 2026-10-08 evening, by model and for the live runs |
-| `*.json` | earlier results and preserved failure records |
-| `LIVE_CHIP.md`, `HARDWARE_BENCHMARK.md`, `TRAINING_FEEDBACK.md`, `PROCESS.md` | how to run, benchmark tables, findings for training, the story |
+| `live_view.py` | the demo's entry point; runs `live_chip.py` and serves the page |
+| `live_chip.py` | the loop: capture, windows, board client, selector, renderer, shutdown, metrics |
+| `pitch_tracker.py` | note tracking and the one-voice renderer |
+| `synth_sink.py` | the built-in synth; run alone it plays a test melody |
+| `board_worker.py`, `persistent_board.py`, `transport_events.py` | worker in the container, one-boot adapter, event clean-up |
+| `board_lock.py` | one user of the board |
+| `build_chip.py`, `build_banner.py`, `banner/` | chip applications; the display step's C source |
+| `check_persistent.py`, `check_banner.py`, `board_check.py` | board checks |
+| `fake_worker.py`, `test_*.py` | software tests |
+| `results/` | result files by model and for the live runs of 2026-10-08 |
 
-One file outside `yujie/` was changed on this branch: `jan/singalong/Pulsar/IF_DNR/import_torch_weights.py`
-(the import fix). `handoff/runs/A_vsP_chip_shift3/` was copied from `origin/singalong-pitch-handoff` at `4917b31`.
-
-## 4. How to get going again
-
-**Containers.** Two SDK containers (image `innatera_sdk:2.3.0`, Talamo 4.7.1):
-
-- `innatera_sdk_container`: mounts only `grp-gold-neurotum`. Used for the voice demo. Leave it alone.
-- `singalong_sdk`: mounts `agent-pitch-handoff` at `/workspace` and `grp-gold-neurotum` read-only at
-  `/opt/grp-gold-neurotum`. Used for everything here. If it is gone, recreate it:
-
-```bash
-docker run -d --name singalong_sdk --group-add innatera \
-  -v ~/TUM/NeuroTUM/agent-pitch-handoff:/workspace \
-  -v ~/TUM/NeuroTUM/grp-gold-neurotum:/opt/grp-gold-neurotum:ro \
-  -e PYTHONPATH=/opt/grp-gold-neurotum/inertial-measurement-unit/wristbandgesturerecognition:/workspace/jan/singalong \
-  -e PYTHONWARNINGS=ignore -e MPLCONFIGDIR=/tmp/mpl -e EVK_BRIDGE=host.docker.internal:1700 \
-  -w /workspace/jan/singalong innatera_sdk:2.3.0 sleep infinity
-docker exec singalong_sdk pip install --user -q seaborn "torchsummary==1.5.1" "pyzenodo3==1.0.2" pretty_midi pytest mido
-```
-
-**Board.** Pulsar EVK on USB, boot switch on UART, `evk-bridge` running on the Mac on port 1700
-(`evk-bridge -i <BOARD_ID> --listen 0.0.0.0 --port 1700 --gdb-port 1701`). One client at a time.
-Everything is RAM boot; nothing has ever been flashed, and that rule stands.
-
-**Rebuild a model's chip applications** (inside `singalong_sdk`, from `/workspace/jan/singalong`; no board
-needed for steps 1 to 4). `M` is the model's folder name under `handoff/runs/`:
-
-```bash
-M=A_vsP_chip_shift3
-# 1. import the weights; must end with IMPORT CHECK PASSED
-python3 Pulsar/IF_DNR/import_torch_weights.py ../../handoff/runs/$M/weights_int8.npz \
-    --out ../../data/runs/${M}_talamo --check ../../handoff/testdata/damp250
-# 2. expected accuracy on the chip. Writes yujie/chip/chip_expectation.json (tracked): move the result away and restore that file
-python3 ../../yujie/chip/eval_modes.py ../../handoff/runs/$M
-# 3. plain chip application (refuses to overwrite an existing app folder)
-python3 ../../yujie/chip/build_chip.py ../../data/runs/${M}_talamo \
-    --npz ../../handoff/runs/$M/weights_int8.npz --check ../../handoff/testdata/damp250
-# 4. the same with the text on the display
-python3 ../../yujie/chip/build_banner.py ../../data/runs/${M}_talamo --npz ../../handoff/runs/$M/weights_int8.npz
-# 5. board: whole test set, plain application (about 10 minutes). Writes yujie/chip/board_check.json (tracked): same care as in step 2
-python3 ../../yujie/chip/board_check.py ../../data/runs/${M}_talamo --npz ../../handoff/runs/$M/weights_int8.npz --crops 512
-# 6. board: whole test set, banner application, on one boot (about 10 minutes)
-python3 -u ../../yujie/chip/check_banner.py ../../data/runs/${M}_talamo --npz ../../handoff/runs/$M/weights_int8.npz --testset --debug-logs
-```
-
-Step 2 alone already tells what the board will give. For `A_vocalset_P` and `A_vsP_chip_shift3` steps 1 to 4
-are done on this Mac.
-
-**Software tests** (no board): from `yujie/chip` with the host Python, `test_windowing.py`,
-`test_transport_events.py`, `test_worker_failure.py`, `test_shutdown.py`; in the container,
-`docker exec -w /workspace/yujie/chip singalong_sdk python3 test_board_lock.py`. All passed on 2026-10-08.
-
-**Voice demo, any time:** `cd ~/TUM/NeuroTUM/demo-voice-v1 && ./run.sh` (about 10 s to load). It replaces
-whatever is on the board. It does not use the board lock, so stop everything else first.
-
-## 5. Open problems, most important first
-
-1. **Nobody has judged the live note tracking.** Rehearse with a person singing, headphones on, and write
-   down what is heard. For a number: record one sung take with known notes and feed it to chip and baseline
-   with `--source wav:`.
-2. **The note is about 1 s late on the chip.** Half of it is waiting for the next 0.5 s window, the rest is
-   the 0.38 s round trip, most of which is sending the 2 s window over the serial link. `--playout-delay 1.0`
-   works but gave 32 to 40 late frames in two of three 3-minute runs; at 1.25 s a 4-minute microphone
-   run had 2 and the recording runs had none. Going well below needs a different chip application
-   (shorter windows, or frames one at a time), not a setting.
-3. **Start-up handshake.** Fails in roughly one start in three (2 of 4 in one test series). The retry
-   handles it; with `--start-attempts 5` a complete failure is unlikely. Start the demo before going on stage.
-   The cause (the host's handshake reply is sent once and never repeated) is in the SDK and is not fixed.
-4. **Sessions without `--worker-debug` are not trusted** beyond about 300 windows (one stall, cause unknown).
-5. **The octave is chosen on the laptop**, from the 48 bands. The network only names the pitch class.
-   Say so when presenting.
-6. **`board_check.py --banner` does not work reliably**: after a failed start, its clear-and-reboot was
-   rejected by the board's loader 2 times out of 2 ("Unexpected response"). Use `check_banner.py --testset`
-   for the banner application. In the live loop's own sequence the boot after a clear worked 4 times out of 4.
-7. **Not measured:** power, time on the chip alone, hidden-layer activity on the board.
-
-## 6. Known quirks of this setup
-
-- **"waiting for sync" / empty result.** The start-up handshake failed. A new start, after a RAM-only clear
-  with `c1util.py`, usually works; the live loop does this by itself.
-- **One client per board.** Everything in `yujie/chip/` that opens the board takes `/tmp/pulsar_board.lock`
-  in the container and refuses to start if it is held. The voice demo and other tools do not.
-- **A second client crashes the first.** On 2026-10-08 a check started during a live run made the chip
-  application stop with "ping message corrupted". That is what the lock is for.
-- **Stopping:** SIGINT or SIGTERM, never SIGKILL on anything that holds the board. A worker that does not
-  react to end-of-input is sent SIGTERM by the loop; if it still runs, the loop says so and exits.
-- **Scripts that write tracked result files in place:** `eval_modes.py` (`chip_expectation.json`),
-  `board_check.py` (`board_check.json`), `check_banner.py` without `--testset` (`banner_check.json`).
-  Running them for another model overwrites the record; copy the result away and restore the file.
-- **`data/` is git-ignored**: imported parameters, built applications and run logs live only on this Mac.
-- **Packages in `singalong_sdk`** were installed with `pip --user`; they are lost if the container is removed.
-- **Builds are slow** (2 to 4 minutes): the SDK image is x86 running under emulation on this Mac.
-- **The display text stays** until the board is reset or powered off, whatever runs afterwards.
-
-## 7. Rules the user set
-
-- RAM boot only; never write flash.
-- Never commit or push to `main` of either repository, and never to a teammate's branch.
-  Work on `yujie/*` branches.
-- No commit, push, overwrite or discard without the user's explicit permission. (This is newer than the
-  earlier rule to push after every update of `TRAINING_FEEDBACK.md`; ask before pushing.)
-- Work step by step: propose, name measurable acceptance criteria, implement only after approval, report
-  the actual results including failures, then wait.
-- Do not switch the demo to a new model or application by default; new things are options.
-- The two trainer-versus-chip rule differences are **kept** for `A_vocalset_P`; do not "fix" a model.
-- Never modify the installed SDK.
-- The voice demo must stay runnable at any time (`demo-voice-v1/`).
-- Recorded audio stays out of git; `audio_data/data_mic/` is read-only for training work.
-- Say plainly whether a number is measured on the board, software, or simulated, and do not say something
-  was heard unless a person heard it.
-
-## 8. Loose ends outside Phase B
-
-- `grp-gold-neurotum`, branch `voice-baseline` (voice demo source, notes, guide) is **not pushed** to
-  the Innatera repository; only `live-mic-scene` is. A snapshot is on the team repository as
-  `yujie/live-mic-voice`, without the last display changes.
-- The Innatera repository's `main` gained a "live microphone" example on 8 October; not merged locally.
-- Another session left `tests/record_playback.py` untracked in `grp-gold-neurotum/audio/scene-classification/`.
-- Never done for the voice demo: a known-tone check of the sample rate, microphone sensitivity and clipping.
-- A board microphone with the feature extraction on the chip would remove the serial transfer and most of
-  the delay. Pieces exist: the voice demo has microphone capture, 16 kHz resampling and frame-by-frame
-  stepping of a network on the board, and `jan/singalong/kernels_c/bands/bands_core.c` is a portable C
-  version of the 48-band front-end with notes for the port. They have not been put together or run on
-  the board, and the model was trained on windows that start from a reset state. Not started.
+Other places: Simon's models and test data in `handoff/` (his branch is `singalong-pitch-handoff`; do not
+commit there), team code in `jan/singalong/` and `simon/`, run logs in `data/live_chip/`.

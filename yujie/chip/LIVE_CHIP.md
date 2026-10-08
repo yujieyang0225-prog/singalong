@@ -4,7 +4,7 @@ The Mac runs audio capture, the existing `StreamingFrontEnd`, window scheduling,
 sound. `singalong_sdk` runs a persistent physical-board worker. The board runs the IF encoder and the
 recurrent network. No board microphone firmware is involved.
 
-Updated 2026-10-08, late evening. State and open problems: `NEXT_SESSION.md`.
+Updated 2026-10-08, 23:40. State and open problems: `NEXT_SESSION.md`.
 
 ## Start and fallback
 
@@ -12,19 +12,37 @@ From `<repo root>` on the Mac:
 
 ```bash
 # The demo: physical chip, Simon's model, text on the board's display, the sung note on the built-in synth.
-python -u yujie/chip/live_view.py --source mic:1 --mode chip --worker-debug --model A_vsP_chip_shift3 --banner --selector pitch --playout-delay 1.25 --start-attempts 5 --sink synth
+python -u yujie/chip/live_view.py --source "mic:MacBook Pro Microphone" --mode chip --worker-debug --model A_vsP_chip_shift3 --banner --selector pitch --playout-delay 1.25 --start-attempts 5 --slow-limit 6 --sink synth
 
 # Laptop only. Does not start Docker or touch the board. The note comes about 0.1 s after the voice.
-python -u yujie/chip/live_view.py --source mic:1 --mode baseline --selector pitch --playout-delay 0.1 --sink synth
+python -u yujie/chip/live_view.py --source "mic:MacBook Pro Microphone" --mode baseline --selector pitch --playout-delay 0.1 --sink synth
 ```
 
-Then open http://127.0.0.1:8765. Stop with Ctrl-C or SIGTERM.
+Then open http://127.0.0.1:8765. Stop with Ctrl-C or SIGTERM. If Ctrl-C does nothing, send SIGTERM from
+another terminal; it runs the same clean shutdown. On 2026-10-08 Ctrl-C did not reach one run (cause
+unknown) and SIGTERM to the host program, sent by process number, ended it in 9 s with every shutdown
+step done. By name:
+
+```bash
+pkill -TERM -f yujie/chip/live_view.py
+```
+
+With `--duration 180` a run stops by itself after 180 s of audio.
 
 - `live_view.py` runs `live_chip.py` unchanged and adds the page; `live_chip.py` takes the same options
   and prints one line per note change.
-- Check the microphone number first if devices have changed:
-  `python -m sounddevice`.
-- Use headphones. With speakers the synth feeds back into the microphone and triggers notes.
+- The microphone is named, because device numbers shift whenever a monitor, headset or speaker is
+  connected. `mic:N` still works; `python -m sounddevice`
+  lists the numbers. `mic` alone takes the Mac's default input.
+- The synth plays on the Mac's default output as it is when the demo starts. macOS makes a Bluetooth
+  device the default output and input by itself when it reconnects, so check the output just before
+  starting. The demo still records from the named MacBook microphone.
+- **Do not use a Bluetooth output.** In both runs on one (2026-10-08) the timing drifted far faster than
+  on the built-in speakers, and from the second minute nearly every window was late ("Known limits").
+  Bluetooth also adds its own delay, which the page cannot see.
+- A loudspeaker is heard by the microphone, and the tracker treats the synth's sound like a voice; keep a
+  speaker away from the MacBook. Headphones avoid that. Wired headphones and a wired speaker have not
+  been run with the demo.
 - Board failures stop the run with an error. There is no silent software substitution; choose
   `--mode baseline` yourself. Never use SIGKILL on anything that holds the board.
 
@@ -37,7 +55,7 @@ CoreAudio provides the requested 16 kHz input; unsupported input settings fail b
 
 | Option | Meaning | Default |
 | --- | --- | --- |
-| `--source mic[:N]`, `wav:<file>` | microphone number N, or a recording played at real speed | required |
+| `--source mic[:N]`, `mic:<name>`, `wav:<file>` | microphone by number or by its name (or a unique part of it), or a recording played at real speed | required |
 | `--mode chip`, `baseline` | network on the board, or the laptop's own pitch estimate | `chip` |
 | `--model NAME` | chip: imported model `data/runs/NAME_talamo` | `A_vocalset_P` |
 | `--banner` | chip: the application that shows a fixed text on the board's display | off |
@@ -53,6 +71,7 @@ CoreAudio provides the requested 16 kHz input; unsupported input settings fail b
 | `--worker-debug` | chip: SDK communication logging. Every long run that passed had it on | off |
 | `--verify-reference` | chip: compare every window with the integer reference and stop on a difference | off |
 | `--window-timeout S` | chip: seconds to wait for one window before stopping with an error | 3 |
+| `--slow-limit N` | chip: round trips in a row longer than the period before the run stops with an error. The demo uses 6 | 3 |
 | `--start-attempts N` | chip: board starts tried when the start-up handshake fails | 3 |
 | `--checkpoint S` | seconds between partial metrics files; 0 turns them off | 10 |
 | `--duration S`, `--metrics <file>` | stop after S seconds; where the metrics go | `data/live_chip/latest.json` |
@@ -79,6 +98,12 @@ delay from sound to note; late frames, skipped updates and connection errors. Th
   times, before any audio is processed. Each failure is printed and listed in the metrics.
   Other start-up errors stop at once. Nothing is retried or rebooted once audio is being processed.
 - **Window timeout.** No answer within `--window-timeout` stops the run with "Board timeout".
+- **Slow round trips.** `--slow-limit` round trips in a row longer than the period stop the run with
+  "N consecutive round trips exceeded update period". The default is 3. The demo command uses 6, so that
+  a short stall does not end the demo; until the limit is reached, notes come late and updates may be
+  skipped to catch up. The metrics count them (`slow_round_trips`, `longest_slow_streak`).
+  A single stall that leaves more than three update periods between two processed windows (about 2 s)
+  still stops the run at any limit: "Output gap exceeds valid post-burn-in window".
 - **Shutdown, in this order:** notes off (renderer, then the sink's own all-notes-off), metrics written,
   threads joined, sound closed, worker closed, metrics rewritten with a `shutdown` record. Every step runs
   even if an earlier one failed or a signal arrived. A worker that ignores end-of-input gets SIGTERM after
@@ -114,8 +139,8 @@ against known notes.
 ## Reproduce checks
 
 ```bash
-# Software only, from yujie/chip: windows and rates, leftover events, worker failure, shutdown.
-for t in test_windowing.py test_transport_events.py test_worker_failure.py test_shutdown.py; do
+# Software only, from yujie/chip: windows and rates, leftover events, worker failure, shutdown, slow round trips.
+for t in test_windowing.py test_transport_events.py test_worker_failure.py test_shutdown.py test_slow_round_trips.py; do
   python $t; done
 docker exec -w /workspace/yujie/chip singalong_sdk python3 test_board_lock.py
 
@@ -147,6 +172,41 @@ levels and timing only.
   window 300 and 399, cause unknown. With it on, 1,451 windows ran on one boot.
 - **The display text stays** until the board is reset or powered off, also in baseline mode.
 - **Live accuracy is unmeasured.**
+- **Microphone timestamps drift.** Unresolved, cause unknown, not investigated (next paragraphs).
+- **`--slow-limit 6` has not met a streak of three on the board.** With the old limit of 3 the rehearsal
+  of 2026-10-08 stopped after 464 windows (0.54 s, 1.67 s, 0.62 s), and 10 s earlier it had missed a
+  stop by 13 ms. With 6, three microphone runs gave 1,529 windows, 17 slow round trips and a longest
+  streak of 2. That 6 rides through the rehearsal's pattern is shown in software only
+  (`test_slow_round_trips.py`).
+
+### Microphone timestamp drift
+
+In microphone runs the frames reach the loop later and later than their own timestamps. With a recording
+they do not (0.003 to 0.006 s throughout). The playout schedule is tied to those timestamps, so the
+margin of the 1.25 s playout delay shrinks: a window's first frame is late by about
+drift + round trip - 0.77 s (derived from the loop; for the rehearsal's largest lateness it gives 1.372 s
+against 1.374 s measured). Frames are therefore counted late from a drift of about 0.43 s. Once a whole
+window is late its frames go to the synth together, so notes can only change in half-second steps (read
+from the loop, not measured).
+
+Measured on 2026-10-08 with the demo command (the rehearsal without `--slow-limit`). Drift is how long
+after the timestamp of its last frame a window was submitted, as the median of each minute, over windows
+that were waiting for audio:
+
+| Run | Sound output | Drift in minute 1 / 2 / 3 | Late frames |
+| --- | --- | --- | --- |
+| Rehearsal, 235 s | MacBook speakers, audible | 0.01 / 0.23 / 0.24 s, 0.42 s at the end | 210 of 14,470 |
+| 23:10, 410 s | one Bluetooth device | 0.43 / 0.60 / 0.73 s, 1.31 s at the end | 18,494 of 25,501 (73 %) |
+| 23:23, 180 s | the same Bluetooth device | 0.25 / 0.45 / 0.66 s | 2,483 of 11,126 (22 %) |
+| 23:30, 180 s | MacBook speakers, muted, Bluetooth off | 0.02 / 0.06 / 0.08 s | 0 of 11,126 |
+
+Not known: the cause; whether it is playing through the Bluetooth device or only having it connected (it
+was also the Mac's default input in both runs); whether the real delay from voice to note grows, because
+the metrics are tied to the drifting timestamps. The muted run is a single run. A fresh start begins at
+zero. Until this is understood: no Bluetooth output, start the demo shortly before it is shown, and run
+the output that will be used once for three minutes beforehand. The metrics of these four runs are on
+this Mac only, not in git (`data/live_chip/demo_slowlimit6_*.json`,
+`yujie/chip/results/live_2026-10-08/presentation_rehearsal.json`).
 
 The earlier limit of about 338 windows per boot is fixed. Each window used to leave three event handles
 open, and the SDK's native library can only wait on handle numbers below 1,024; `transport_events.py` now
@@ -183,7 +243,7 @@ After the fix: 366 of 366 windows in the same 185 s run (`chip_stability_event_c
   1.25 s is the safe value. In baseline mode each frame is delivered as it is computed.
 - Capture continues independently of inference. Histories and output queues are bounded. Old
   submission deadlines may be skipped to catch up, and are counted; duplicate delivery is rejected.
-  Three consecutive host round trips exceeding the period stop the run.
+  `--slow-limit` consecutive host round trips exceeding the period stop the run (default 3).
 
 `inference_seconds` covers dataset preparation, transfer, physical inference, return, sample reset,
 and output conversion inside the SDK worker. `host_roundtrip_seconds` additionally includes JSON,
