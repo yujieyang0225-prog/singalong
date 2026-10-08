@@ -231,6 +231,9 @@ Nothing has been flashed; the model, frozen voice demo and original SDK containe
 
 ## Log
 
+- **2026-10-08, Milestone E** Long run failed after 337 exact windows; native event failure, timing
+  outliers, and pending-event investigation recorded. No stability success claimed.
+
 - **2026-10-08, recheck** Milestone E failed after 337 windows; a back-to-back test stopped after 338.
   The connection has a fixed lifetime of about 338 windows. Software tests and the one-boot check
   were rerun and pass. Singing through the chip loop has still not been tried by a person.
