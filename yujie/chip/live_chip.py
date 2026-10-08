@@ -232,6 +232,9 @@ class LiveRun:
                     if last is None:
                         self.metrics['startup_frames_omitted'] = int(indices[0])
                     timing = {k: response[k] for k in ('inference_seconds', 'host_roundtrip_seconds', 'exact_reference')}
+                    for key in ('worker_open_fds', 'pending_events', 'drained_events', 'max_event_id'):
+                        if key in response:
+                            timing[key] = response[key]
                     timing.update(update=update, end_frame_exclusive=end, submitted_seconds=submitted - self.epoch)
                     self.metrics['windows'].append(timing)
                     for key in ('worker_cpu_seconds', 'worker_peak_rss_bytes'):

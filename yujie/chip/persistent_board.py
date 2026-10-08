@@ -8,6 +8,8 @@ from pathlib import Path
 import threading
 import time
 import warnings
+import sys
+import os
 
 import numpy as np
 import torch
@@ -15,6 +17,7 @@ import talamo
 
 import build_chip
 from singalong import data
+from transport_events import TrackedEvents
 
 
 class PersistentBoard:
@@ -55,6 +58,12 @@ class PersistentBoard:
             self.connection = stack.enter_context(self.soc.get_board_connection())
             self.connection.boot_application(str(self.app))
             self.boot_seconds = time.perf_counter() - t
+            # Keep Talamo's single native connection, but account for every
+            # async request across the fresh per-call MocktcpManager objects.
+            transport_started = time.perf_counter()
+            native = self.connection.get_mocktcp(sys.stdout)
+            self.transport_setup_seconds = time.perf_counter() - transport_started
+            self.connection._mocktcp_connection = TrackedEvents(native)
             stack.enter_context(self.assembled._configure_embedded_application_board_connection(self.connection))
         except BaseException:
             stack.close()
@@ -75,6 +84,7 @@ class PersistentBoard:
                     warnings.filterwarnings('error', category=UserWarning,
                                             module=r'talamo\.pipeline\.embedded\.utils\.board_comm')
                     result = self.assembled._execute_pipeline(self.dataset(x), verbose=0)
+                self.last_drained_events = self.connection._mocktcp_connection.drain()
                 if len(result) != 1:
                     raise RuntimeError('Board returned no complete sample; startup/transport failed. '
                                        'Stop and inspect the connection; no automatic reboot is performed.')
@@ -95,3 +105,11 @@ class PersistentBoard:
         if self.stack is not None:
             self.stack.__exit__(*exc)
             self.stack = None
+
+    def transport_stats(self):
+        """Diagnostics for the Linux SDK worker; keep native/private access here."""
+        transport = self.connection._mocktcp_connection
+        return dict(worker_open_fds=len(os.listdir('/proc/self/fd')),
+                    pending_events=len(transport.pending),
+                    drained_events=transport.drained_total,
+                    max_event_id=transport.max_event_id)

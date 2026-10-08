@@ -53,6 +53,7 @@ def main():
                 raise RuntimeError('Startup silence produced spikes')
             emit(dict(type='ready', mode='physical-chip', boot_seconds=board.boot_seconds,
                       prime_seconds=prime_seconds, startup_silence_seconds=silence_seconds,
+                      transport_setup_seconds=board.transport_setup_seconds,
                       startup_active_exact=True, startup_silence_exact=True, application_boots=1))
             for line in sys.stdin:
                 request = json.loads(line)
@@ -69,7 +70,8 @@ def main():
                 emit(dict(type='result', id=request['id'], spikes=spikes.tolist(),
                           inference_seconds=seconds, exact_reference=same,
                           worker_cpu_seconds=time.process_time(),
-                          worker_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024))
+                          worker_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
+                          **board.transport_stats()))
         finally:
             with redirect_stdout(sys.stderr):
                 board.__exit__(None, None, None)

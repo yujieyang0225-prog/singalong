@@ -219,6 +219,19 @@ Until then nothing was wrong: median board round trip 0.364 s, no skipped or dup
 
 This does not concern training. It limits how long one chip session can run, whatever the model.
 
+**Event-cleanup fix under validation (later in this session).** Native source identifies event IDs
+as eventfd file descriptors, waits with `select()`, and closes each eventfd when its request is freed.
+Talamo creates a fresh MocktcpManager per pipeline call but can leave ping completions unconsumed.
+A repository-local `TrackedEvents` proxy now accounts for every asynchronous request and drains the
+remaining ping completions after successful data delivery and acknowledged model-state reset.
+It neither reopens the connection nor reboots the board, and changes no SDK file or model rule.
+
+The first physical recheck passed all six deterministic active/silent/repeat cases exactly
+(`persistent_event_cleanup_check.json`), 0.359–0.443 s per call. Three software regression tests cover
+bounded event reuse, unexpected leftover data, and native no-completion errors. A new 185-second
+physical-chip run is in progress with per-window open-FD, pending-event, and max-event-ID counters.
+The long-run fix is not yet claimed validated. Previous failed runs remain intact.
+
 **Independent fallback checks passed:** 12 seconds of prerecorded baseline -> score follower -> violin
 WAV (747 frames); 12 seconds of MacBook microphone -> baseline -> GarageBand MIDI (747 frames,
 133 nonzero-feature frames, no clipping/capture errors); and 185 seconds of prerecorded baseline
@@ -230,6 +243,9 @@ Usage, interface details and reproduction commands: `yujie/chip/LIVE_CHIP.md`.
 Nothing has been flashed; the model, frozen voice demo and original SDK container remain unchanged.
 
 ## Log
+
+- **2026-10-08, event cleanup** Added a repository-local pending-ping drain; six physical windows
+  still match exactly. Long-run validation started with descriptor/event counters.
 
 - **2026-10-08, Milestone E** Long run failed after 337 exact windows; native event failure, timing
   outliers, and pending-event investigation recorded. No stability success claimed.
