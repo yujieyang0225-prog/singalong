@@ -89,9 +89,13 @@ The same run on the cluster, through the SLURM script:
 sbatch --array=0 --export=ALL,TAG=_P,EXTRA="--compact --chunk 64 --lr 0.1 --wd 0 --pitch-only" simon/dataprep/train_slurm.sh
 ```
 
-**How we know this is the code that ran.** The run was trained on the cluster's copy of the repo. Its `metrics.json`
-lists the same arguments, in the same order, as this commit's `train_torch.py` argument parser. A file-by-file hash
-comparison against the cluster copy is the last check; its result will be added here.
+**How we know this is the code that ran (verified 2026-10-08).**
+- **Same files.** The md5 hashes of `train_torch.py`, `torchsnn.py`, `frontend.py`, `data.py`, `augment.py`,
+  `metrics.py` and `eval_pitch.py` on the cluster (`~/MNH26SVR`) are identical to this commit.
+- **The run needed this version.**
+  - `--pitch-only` was added to `train_torch.py` at 12:54, and the file has not changed since.
+  - The run's `metrics.json` has `pitch_only: true`, so it ran with this version.
+  - The other five files were last changed before 12:54.
 
 ## 4. Model facts
 
