@@ -28,6 +28,9 @@ import chipref
 
 WORKER = os.path.join(HERE, 'reference_worker.py')
 WAV = os.path.join(ROOT, 'data', 'live_chip', 'tones.wav')
+HAPPY_BIRTHDAY = os.path.join(ROOT, 'Hackathon', '08 Songs', 'sources', '01_Happy_Birthday', 'audio',
+                              '624721__asiilanna__happy-birthday.wav')
+BOARD_NOTES = os.path.join(HERE, 'results', 'reference_worker', 'happy_birthday_board_notes.txt')
 MODELS = ('A_vsP_chip_shift3', 'A_vocalset_P')                  # the validated model and the older default
 
 
@@ -228,7 +231,7 @@ NOTE_LINE = re.compile(r'^\s*[\d.]+s audio \| reference \| .+ \| notes=\[.*\]$')
 class Loop:
     """The real live loop in a subprocess, in --mode reference, on tones.wav. A docker that fails loudly is first on PATH."""
 
-    def __init__(self, tmp, name, duration=12, latency=0.38, model=MODELS[0], window_timeout=3.0):
+    def __init__(self, tmp, name, duration=12, latency=0.38, model=MODELS[0], window_timeout=3.0, wav=WAV):
         self.metrics_path = os.path.join(tmp, name + '.json')
         self.log_path = os.path.join(tmp, name + '.log')
         self.marker = os.path.join(tmp, name + '.docker-was-called')
@@ -238,7 +241,7 @@ class Loop:
         with open(shim, 'w') as f:
             f.write(f'#!/bin/sh\necho "$@" >> {self.marker}\nexit 99\n')
         os.chmod(shim, os.stat(shim).st_mode | stat.S_IXUSR)
-        code = DRIVER.format(here=HERE, wav=WAV, metrics=self.metrics_path, duration=duration, model=model,
+        code = DRIVER.format(here=HERE, wav=wav, metrics=self.metrics_path, duration=duration, model=model,
                              latency=latency, window_timeout=window_timeout)
         self.log = open(self.log_path, 'w')                  # a file, not a pipe: a surviving worker would hold a pipe open
         self.started = time.perf_counter()
@@ -328,6 +331,25 @@ class ReferenceModeLoopTests(unittest.TestCase):
         self.assertNotEqual(run.code, 0)
         self.assertIn('No weights for model no_such_model', run.text)
         self.assertFalse(run.docker_called)
+
+
+@unittest.skipUnless(os.path.exists(HAPPY_BIRTHDAY), 'the Happy Birthday recording is missing')
+class AgainstTheBoardTests(unittest.TestCase):
+    """The end-to-end check: the loop on a simulated chip must print what the physical chip made it print."""
+
+    def test_the_notes_are_the_ones_the_physical_chip_produced_and_another_model_would_not_be(self):
+        with open(BOARD_NOTES) as f:
+            board = [line.rstrip('\n') for line in f if not line.startswith('#') and line.strip()]
+        self.assertEqual(len(board), 45)
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = {model: Loop(tmp, model, duration=25, model=model, wav=HAPPY_BIRTHDAY) for model in MODELS}   # at the same time
+            for run in runs.values():
+                run.wait()
+                self.assertEqual(run.code, 0, run.text[-1500:])
+        validated = [line.replace('| reference |', '| chip |') for line in runs[MODELS[0]].notes]
+        self.assertEqual(validated, board)                                 # all 45 lines, audio time and notes
+        older = [line.replace('| reference |', '| chip |') for line in runs[MODELS[1]].notes]
+        self.assertNotEqual(older, board, 'the control model prints the same lines: this comparison cannot tell models apart')
 
 
 class CommandLineTests(unittest.TestCase):
