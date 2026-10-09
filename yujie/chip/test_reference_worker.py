@@ -1,4 +1,5 @@
-"""Software-only tests of the simulated chip (reference_worker.py). No board, no Docker, no SDK.
+"""Software-only tests of the simulated chip: reference_worker.py alone, and the live loop with --mode reference.
+No board, no Docker, no SDK. The loop tests need data/live_chip/tones.wav (make_test_audio.py makes it).
 
 Run from yujie/chip with the host Python:  python test_reference_worker.py
 """
@@ -8,9 +9,12 @@ import json
 import os
 import pathlib
 import queue
+import re
 import signal
+import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -23,6 +27,7 @@ sys.path.insert(0, HERE)
 import chipref
 
 WORKER = os.path.join(HERE, 'reference_worker.py')
+WAV = os.path.join(ROOT, 'data', 'live_chip', 'tones.wav')
 MODELS = ('A_vsP_chip_shift3', 'A_vocalset_P')                  # the validated model and the older default
 
 
@@ -204,6 +209,144 @@ class WorkerProtocolTests(unittest.TestCase):
             w.process.wait(timeout=5)
             self.assertLess(time.perf_counter() - started, 2)
             self.assertEqual(w.process.returncode, 0)
+
+
+DRIVER = '''
+import argparse, sys
+from pathlib import Path
+sys.path.insert(0, {here!r})
+import live_chip
+a = argparse.Namespace(mode='reference', source='wav:' + {wav!r}, period=.5, playout_delay=1.25, duration={duration},
+                       sink='print', selector='pitch', bpm=80, verify_reference=False, container='none',
+                       metrics=Path({metrics!r}), window_timeout={window_timeout}, start_attempts=1,
+                       model={model!r}, sim_latency={latency})
+live_chip.LiveRun(a).run()
+'''
+NOTE_LINE = re.compile(r'^\s*[\d.]+s audio \| reference \| .+ \| notes=\[.*\]$')
+
+
+class Loop:
+    """The real live loop in a subprocess, in --mode reference, on tones.wav. A docker that fails loudly is first on PATH."""
+
+    def __init__(self, tmp, name, duration=12, latency=0.38, model=MODELS[0], window_timeout=3.0):
+        self.metrics_path = os.path.join(tmp, name + '.json')
+        self.log_path = os.path.join(tmp, name + '.log')
+        self.marker = os.path.join(tmp, name + '.docker-was-called')
+        shim_dir = os.path.join(tmp, name + '-bin')
+        os.makedirs(shim_dir)
+        shim = os.path.join(shim_dir, 'docker')
+        with open(shim, 'w') as f:
+            f.write(f'#!/bin/sh\necho "$@" >> {self.marker}\nexit 99\n')
+        os.chmod(shim, os.stat(shim).st_mode | stat.S_IXUSR)
+        code = DRIVER.format(here=HERE, wav=WAV, metrics=self.metrics_path, duration=duration, model=model,
+                             latency=latency, window_timeout=window_timeout)
+        self.log = open(self.log_path, 'w')                  # a file, not a pipe: a surviving worker would hold a pipe open
+        self.started = time.perf_counter()
+        self.process = subprocess.Popen([sys.executable, '-c', code], stdout=self.log, stderr=self.log,
+                                        env=dict(os.environ, PATH=shim_dir + os.pathsep + os.environ['PATH']))
+
+    def wait(self, timeout=90):
+        self.process.wait(timeout=timeout)
+        self.seconds = time.perf_counter() - self.started
+        self.log.close()
+        with open(self.log_path) as f:
+            self.text = f.read()
+        self.code = self.process.returncode
+        self.docker_called = os.path.exists(self.marker)
+        self.metrics = None
+        if os.path.exists(self.metrics_path):
+            with open(self.metrics_path) as f:
+                self.metrics = json.load(f)
+        self.notes = [line for line in self.text.splitlines() if NOTE_LINE.match(line)]
+        return self
+
+
+def worker_pids(marker):
+    out = subprocess.run(['pgrep', '-f', marker], capture_output=True, text=True).stdout.split()
+    return [pid for pid in out if int(pid) != os.getpid()]
+
+
+@unittest.skipUnless(os.path.exists(WAV), 'data/live_chip/tones.wav is missing: python make_test_audio.py data/live_chip/tones.wav --seconds 190')
+class ReferenceModeLoopTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_runs_without_docker_and_says_it_is_simulated(self):
+        run = Loop(self.tmp.name, 'default').wait()
+        self.assertEqual(run.code, 0, run.text[-1500:])
+        self.assertFalse(run.docker_called, 'the loop called docker')
+        self.assertIn('ACTIVE INFERENCE MODE: REFERENCE', run.text)
+        self.assertIn('Starting the simulated chip', run.text)
+        self.assertNotIn('physical board worker', run.text)
+        m = run.metrics
+        self.assertIs(m['completed'], True)
+        self.assertEqual(m['mode'], 'reference-simulation')
+        self.assertIs(m['simulated'], True)
+        self.assertEqual(m['application_boots'], 0)
+        self.assertEqual(len(m['weights_md5']), 32)
+        self.assertGreaterEqual(len(m['windows']), 15)
+        self.assertTrue(all(w['exact_reference'] is None for w in m['windows']), 'a window claims it was compared')
+        round_trips = [w['host_roundtrip_seconds'] for w in m['windows']]
+        self.assertTrue(0.38 <= sorted(round_trips)[len(round_trips) // 2] <= 0.45, round_trips)
+        self.assertEqual((m['slow_round_trips'], m['late_outputs'], m['connection_failures']), (0, 0, 0))
+        self.assertGreaterEqual(len(run.notes), 3, run.text[-800:])
+
+    def test_notes_do_not_depend_on_the_simulated_time_and_repeat_exactly(self):
+        runs = [Loop(self.tmp.name, name, latency=latency)
+                for name, latency in (('fast1', 0), ('fast2', 0), ('slow', 0.38))]        # at the same time
+        for run in runs:
+            run.wait()
+            self.assertEqual(run.code, 0, run.text[-1500:])
+        fast1, fast2, slow = runs
+        self.assertGreaterEqual(len(fast1.notes), 3)
+        self.assertEqual(fast1.notes, fast2.notes)
+        self.assertEqual(fast1.notes, slow.notes)
+        trips = sorted(w['host_roundtrip_seconds'] for w in fast1.metrics['windows'])
+        self.assertLess(trips[len(trips) // 2], 0.05)
+
+    def test_a_worker_that_dies_stops_the_loop_with_an_error(self):
+        run = Loop(self.tmp.name, 'killed', duration=30, latency=0.3777)
+        time.sleep(7)
+        subprocess.run(['pkill', '-TERM', '-f', 'reference_worker.py.*0.3777'])
+        run.wait(timeout=30)
+        self.assertNotEqual(run.code, 0)
+        self.assertIn('Board worker exited', run.text)
+        self.assertLess(run.seconds, 20)
+        self.assertEqual(worker_pids('reference_worker.py.*0.3777'), [])
+
+    def test_a_worker_that_is_too_slow_is_a_timeout_and_leaves_nothing_behind(self):
+        run = Loop(self.tmp.name, 'slow-worker', duration=30, latency=5.0123, window_timeout=1.0).wait(timeout=60)
+        self.assertNotEqual(run.code, 0)
+        self.assertIn('Board timeout', run.text)
+        self.assertLess(run.seconds, 30)
+        time.sleep(1)
+        self.assertEqual(worker_pids('reference_worker.py.*5.0123'), [])
+
+    def test_an_unknown_model_is_a_clear_error(self):
+        run = Loop(self.tmp.name, 'no-model', model='no_such_model').wait()
+        self.assertNotEqual(run.code, 0)
+        self.assertIn('No weights for model no_such_model', run.text)
+        self.assertFalse(run.docker_called)
+
+
+class CommandLineTests(unittest.TestCase):
+    def usage_error(self, *args):
+        process = subprocess.run([sys.executable, os.path.join(HERE, 'live_chip.py'), '--source', 'wav:none', *args],
+                                 capture_output=True, text=True, timeout=60)
+        self.assertEqual(process.returncode, 2, process.stderr[-500:])
+        return process.stderr
+
+    def test_options_that_make_no_sense_without_a_board_are_refused(self):
+        self.assertIn('do not use --banner', self.usage_error('--mode', 'reference', '--banner'))
+        self.assertIn('do not use --banner', self.usage_error('--mode', 'reference', '--verify-reference'))
+        self.assertIn('sim-latency >= 0', self.usage_error('--mode', 'reference', '--sim-latency', '-1'))
+
+    def test_reference_keeps_the_chip_window_rules_and_chip_mode_is_unchanged(self):
+        self.assertIn('Reference mode: use period 0.5..1 s', self.usage_error('--mode', 'reference', '--period', '2'))
+        self.assertIn('Chip mode: use period 0.5..1 s', self.usage_error('--mode', 'chip', '--period', '2'))
+        self.assertIn('Reference mode: use period 0.5..1 s and playout-delay >= period + 0.4 s',
+                      self.usage_error('--mode', 'reference', '--playout-delay', '0.5'))
 
 
 if __name__ == '__main__':

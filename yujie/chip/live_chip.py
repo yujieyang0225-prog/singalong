@@ -2,7 +2,9 @@
 """Shape 2: Mac audio/frontend/selector/violin + persistent physical Pulsar inference.
 
 Run with the host snn Python. Only board_worker runs inside singalong_sdk.
-Use --mode baseline for the team's explicit software fallback.
+Use --mode baseline for the team's explicit software fallback (the laptop's own pitch estimate, no network).
+Use --mode reference for a simulated chip: the same loop and the same network, answered by the integer reference
+on this Mac, with no board (reference_worker.py, BOARDLESS.md).
 """
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ import live as host
 from singalong import frontend as fe, evidence as ev, renderer as rd
 from windowing import newest_rates, window_end
 from pitch_tracker import PitchTracker
+from reference_worker import BOARD_MEDIAN_SECONDS
 
 
 class ChipClient:
@@ -303,9 +306,21 @@ class LiveRun:
         finally:
             self.put(None)
 
+    def reference_command(self):
+        """The simulated chip: reference_worker.py as a local process with the weights of --model."""
+        model = getattr(self.a, 'model', None) or DEFAULT_MODEL
+        weights = ROOT / 'handoff/runs' / model / 'weights_int8.npz'
+        if not weights.is_file():
+            raise FileNotFoundError(f'No weights for model {model}: {weights}')
+        return [sys.executable, str(Path(__file__).resolve().parent / 'reference_worker.py'), '--npz', str(weights),
+                '--sim-latency', str(getattr(self.a, 'sim_latency', BOARD_MEDIAN_SECONDS))]
+
     def start_board(self):
         """Start the worker. A start whose handshake never completes is cleared (RAM boot only) and
         tried again, visibly and counted, before any audio is processed. Other errors stop at once."""
+        if self.a.mode == 'reference':                    # a local process: no board, no handshake to retry
+            return ChipClient('this Mac (simulated chip)', False, window_timeout=getattr(self.a, 'window_timeout', 3.0),
+                              command=getattr(self.a, 'worker_command', None) or self.reference_command())
         failures = self.metrics.setdefault('startup_failures', [])
         attempts = getattr(self.a, 'start_attempts', 1)
         for attempt in range(1, attempts + 1):
@@ -333,8 +348,10 @@ class LiveRun:
         sink = render = None
         started, cpu_start = time.perf_counter(), time.process_time()
         try:
-            if self.a.mode == 'chip':
-                print('Starting physical board worker (SDK import, one RAM boot, startup handshake)...', flush=True)
+            if self.a.mode in ('chip', 'reference'):
+                print('Starting physical board worker (SDK import, one RAM boot, startup handshake)...'
+                      if self.a.mode == 'chip' else
+                      'Starting the simulated chip (integer reference on this Mac, no board)...', flush=True)
                 client = self.start_board()
                 self.metrics.update(client.ready)
             print(f'ACTIVE INFERENCE MODE: {self.a.mode.upper()} | source={self.a.source} | melody only', flush=True)
@@ -482,7 +499,9 @@ class LiveRun:
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source', required=True)
-    ap.add_argument('--mode', choices=['chip', 'baseline'], default='chip')
+    ap.add_argument('--mode', choices=['chip', 'baseline', 'reference'], default='chip',
+                    help="chip: the physical board; baseline: the laptop's pitch estimate, no network; "
+                         "reference: a simulated chip, the same network answered in software on this Mac")
     ap.add_argument('--container', default='singalong_sdk')
     ap.add_argument('--period', type=float, default=.5)
     ap.add_argument('--playout-delay', type=float, default=1.0, help='Seconds after frame-end audio timestamp')
@@ -501,12 +520,19 @@ def main():
     ap.add_argument('--window-timeout', type=float, default=3.0, help='chip: seconds to wait for one window before stopping')
     ap.add_argument('--start-attempts', type=int, default=3, help='chip: board starts tried when the handshake fails')
     ap.add_argument('--bpm', type=float, default=80)
+    ap.add_argument('--sim-latency', type=float, default=BOARD_MEDIAN_SECONDS,
+                    help=f'reference: seconds a window takes before its answer returns; default {BOARD_MEDIAN_SECONDS}, '
+                         "the physical chip's median from the board (not measured here); 0 answers at once")
     ap.add_argument('--verify-reference', action='store_true')
     ap.add_argument('--worker-debug', action='store_true')
     ap.add_argument('--metrics', type=Path, default=ROOT / 'data/live_chip/latest.json')
     a = ap.parse_args()
-    if a.mode == 'chip' and (not .5 <= a.period <= 1 or a.playout_delay < a.period + .4):
-        ap.error('Chip mode: use period 0.5..1 s and playout-delay >= period + 0.4 s')
+    if a.mode in ('chip', 'reference') and (not .5 <= a.period <= 1 or a.playout_delay < a.period + .4):
+        ap.error(f'{a.mode.capitalize()} mode: use period 0.5..1 s and playout-delay >= period + 0.4 s')
+    if a.mode == 'reference' and (a.banner or a.verify_reference):
+        ap.error('Reference mode has no display and nothing to compare with: do not use --banner or --verify-reference')
+    if a.sim_latency < 0:
+        ap.error('Use sim-latency >= 0')
     if a.playout_delay < .05:
         ap.error('Use playout-delay >= 0.05 s')
     if a.slow_limit < 1:
