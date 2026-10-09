@@ -4,7 +4,7 @@ The Mac runs audio capture, the existing `StreamingFrontEnd`, window scheduling,
 sound. `singalong_sdk` runs a persistent physical-board worker. The board runs the IF encoder and the
 recurrent network. No board microphone firmware is involved.
 
-Updated 2026-10-09, 01:15. State and open problems: `NEXT_SESSION.md`.
+Updated 2026-10-09, 02:30. State and open problems: `NEXT_SESSION.md`. Checklist for the pitch day: `PITCH_DAY.md`.
 
 ## Start and fallback
 
@@ -37,9 +37,10 @@ With `--duration 180` a run stops by itself after 180 s of audio.
 - The synth plays on the Mac's default output as it is when the demo starts. macOS makes a Bluetooth
   device the default output and input by itself when it reconnects, so check the output just before
   starting. The demo still records from the named MacBook microphone.
-- **Do not use a Bluetooth output.** In both runs on one (2026-10-08) the timing drifted far faster than
-  on the built-in speakers, and from the second minute nearly every window was late ("Known limits").
-  Bluetooth also adds its own delay, which the page cannot see.
+- **Prefer a wired output.** With one Bluetooth speaker, two runs on 2026-10-08 drifted far faster than on
+  the built-in speakers, with nearly every window late from the second minute; a third run on 2026-10-09
+  was clean ("Known limits"). What made the difference is not known. Bluetooth also adds its own delay,
+  which the page cannot see.
 - A loudspeaker is heard by the microphone, and the tracker treats the synth's sound like a voice; keep a
   speaker away from the MacBook. Headphones avoid that. Wired headphones and a wired speaker have not
   been run with the demo.
@@ -111,8 +112,9 @@ Checked on 2026-10-09. Software, on the tone file: the notes in `/state` match t
 and a 60 s run had 0 late frames of 3,747 with the page open and without. On the board, the recording
 through the chip with the page open: 46 of 46 windows exact, no late frame, median round trip 0.398 s
 (`data/live_chip/ui_recheck.json`, on this Mac only). During that run the page showed the chip mode and blue
-marks in the strip (read from the page by a script). Nobody has yet judged the page by eye on a projector,
-and it has not been used with the microphone on the chip.
+marks in the strip (read from the page by a script). Later that night the page was open during two
+3-minute runs with the microphone on the chip (in Safari) and during the 20-minute run. Nobody has yet said
+whether it is readable on a projector.
 
 ## What protects a run
 
@@ -195,7 +197,8 @@ levels and timing only.
 - **About 1 s from voice to note on the chip**, by design of the window scheme (next section).
 - **Start-up handshake fails in roughly one start in three.** Retried automatically; not fixed.
 - **Runs without `--worker-debug` are not trusted beyond about 300 windows**: one such run stalled between
-  window 300 and 399, cause unknown. With it on, 1,451 windows ran on one boot.
+  window 300 and 399, cause unknown. With it on, 2,396 windows ran on one boot in a 20-minute live run,
+  every one identical to the reference, and 1,451 in the test set.
 - **The display text stays** until the board is reset or powered off, also in baseline mode.
 - **Live accuracy is unmeasured.**
 - **Microphone timestamps drift.** Unresolved, cause unknown, not investigated (next paragraphs).
@@ -215,7 +218,7 @@ against 1.374 s measured). Frames are therefore counted late from a drift of abo
 window is late its frames go to the synth together, so notes can only change in half-second steps (read
 from the loop, not measured).
 
-Measured on 2026-10-08 with the demo command (the rehearsal without `--slow-limit`). Drift is how long
+Measured on 2026-10-08 and 09 with the demo command (the rehearsal without `--slow-limit`). Drift is how long
 after the timestamp of its last frame a window was submitted, as the median of each minute, over windows
 that were waiting for audio:
 
@@ -225,13 +228,23 @@ that were waiting for audio:
 | 23:10, 410 s | one Bluetooth device | 0.43 / 0.60 / 0.73 s, 1.31 s at the end | 18,494 of 25,501 (73 %) |
 | 23:23, 180 s | the same Bluetooth device | 0.25 / 0.45 / 0.66 s | 2,483 of 11,126 (22 %) |
 | 23:30, 180 s | MacBook speakers, muted, Bluetooth off | 0.02 / 0.06 / 0.08 s | 0 of 11,126 |
+| 10-09 01:24, 180 s | wired earphones | 0.13 / 0.28 / 0.31 s, 0.39 s at the end | 5 of 11,126 |
+| 10-09 01:31, 180 s | the same Bluetooth device | 0.02 / 0.03 / 0.12 s, 0.24 s at the end | 0 of 11,126 |
+| 10-09 01:42, 1,200 s | MacBook speakers, muted, nobody singing | 0.03 / 0.04 / 0.14 s, then see below | 5,341 of 74,876 (7 %) |
+
+The 20-minute run (every window compared with the reference, 2,396 of 2,396 identical, no stop, round trip
+steady at 0.40 s) shows how the drift goes on: about 0.03 s a minute, 0.21 s in minute 5, 0.34 s in minute
+10, 0.43 s in minute 14 and 0.58 s in minute 20. Late frames began in minute 11, and from minute 14 nearly
+every window was late. So a run stays up, and what wears out is its timing.
 
 Not known: the cause; whether it is playing through the Bluetooth device or only having it connected (it
 was also the Mac's default input in both runs); whether the real delay from voice to note grows, because
-the metrics are tied to the drifting timestamps. The muted run is a single run. A fresh start begins at
-zero. Until this is understood: no Bluetooth output, start the demo shortly before it is shown, and run
-the output that will be used once for three minutes beforehand. The metrics of these four runs are on
-this Mac only, not in git (`data/live_chip/demo_slowlimit6_*.json`,
+the metrics are tied to the drifting timestamps. The drift differs from run to run, and the sound output
+does not explain it: the clean Bluetooth run drifted less than the wired one. A fresh start begins at zero.
+Until this is understood: prefer a wired output, start the demo shortly before it is shown, restart it
+every 10 minutes at the latest and sooner when "late frames" on the page climbs, and run the output that
+will be used once for three minutes beforehand. The metrics of these runs are on this Mac only, not in git
+(`data/live_chip/demo_slowlimit6_*.json`, `demo_newpage_*.json`, `soak_20min.json`,
 `yujie/chip/results/live_2026-10-08/presentation_rehearsal.json`).
 
 The earlier limit of about 338 windows per boot is fixed. Each window used to leave three event handles
