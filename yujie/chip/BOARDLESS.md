@@ -8,7 +8,7 @@ with `/workspace` (inside the `singalong_sdk` container). Python on the Mac mean
 
 **Yes, most of the work does not need the board.** What does not: the final proof on the chip, and anything about
 timing. A new network can be tried live, with the tracker, synth and page, on a simulated chip: `--mode reference`
-(section 3, built on the branch `yujie/reference-worker`).
+(section 3, built on 2026-10-09 and merged into `yujie/singalong-chip`, locally).
 
 | Work | Board needed? | How |
 | --- | --- | --- |
@@ -86,7 +86,7 @@ python -u yujie/chip/live_view.py --source "mic:MacBook Pro Microphone" --mode r
 `<NAME>` is a folder under `handoff/runs/` with `weights_int8.npz`: put a new model there and it plays. It needs no
 import and no build.
 
-**Acceptance criteria and what was measured (2026-10-09, no board, branch `yujie/reference-worker`):**
+**Acceptance criteria and what was measured (2026-10-09, no board; commits `72344f4` to `f1bd49f`):**
 
 | # | Criterion | Result |
 | --- | --- | --- |

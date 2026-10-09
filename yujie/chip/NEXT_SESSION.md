@@ -9,8 +9,8 @@ in this folder is the checklist for getting the demo up and keeping it up.
 
 - To keep improving **without the board**, read `BOARDLESS.md` in this folder first. A model's accuracy on the chip
   can be computed in software (the reference matched the board on every window checked), and since the evening of
-  2026-10-09 a network can also be played live on a **simulated chip**: `--mode reference`, on the branch
-  `yujie/reference-worker` (`BOARDLESS.md`, section 3; `LIVE_CHIP.md`, "Simulated chip"; not yet merged or pushed).
+  2026-10-09 a network can also be played live on a **simulated chip**: `--mode reference`, merged into this
+  branch locally, not pushed (`BOARDLESS.md`, section 3; `LIVE_CHIP.md`, "Simulated chip").
 - `README.md` in this folder is the short entry point: reading order, commands, file map, branches, commit style.
 - The map of the whole workspace is `~/TUM/NeuroTUM/README.md`. A backup of everything git does not hold is in
   `~/TUM/NeuroTUM/archive/2026-10-09_wrapup_backup/`.
@@ -91,10 +91,12 @@ Also done: direct note tracking (`--selector pitch`), the built-in synth (`--sin
   The user keeps both local. The plan predates two later decisions (section 6), so the page differs from it.
 - **Tag:** `pitch-2026-10-09` on `151e96b`, created locally at the wrap-up so that there is one name for the pitch
   version. Not pushed (section 6).
-- **Branch `yujie/reference-worker`** (local, started from `abb31e2`, not pushed): the simulated chip. One step per
-  commit, `git log --oneline abb31e2..yujie/reference-worker`. It adds `reference_worker.py`, `--mode reference` in
-  `live_chip.py`, the "SIMULATED CHIP" wording in `live_view.py`, `test_reference_worker.py` and the board-notes
-  fixture; the chip path, `board_worker.py` and `ChipClient` are unchanged.
+- **The simulated chip** (`--mode reference`) was built on the branch `yujie/reference-worker` and merged into this
+  branch on 2026-10-09 as a fast-forward, locally, **not pushed**: six commits, one step each,
+  `git log --oneline abb31e2..f1bd49f`. They add `reference_worker.py`, `--mode reference` in `live_chip.py`, the
+  "SIMULATED CHIP" wording in `live_view.py`, `test_reference_worker.py` and the board-notes fixture, and the
+  documents; the chip path, `board_worker.py` and `ChipClient` are unchanged. The branch name
+  `yujie/reference-worker` still points at `f1bd49f` and can be deleted (`git branch -d yujie/reference-worker`).
 
 ## 4. The demo command and its safety settings
 
@@ -210,8 +212,8 @@ Decisions of the pitch-day list, as they stand:
    voice; no confirmation across several chip updates, no glide, no new controller class. Estimated extra
    delay on note changes: 150 to 250 ms. Proposed checks: host-only note-sequence tests, the generated tone
    file (known 2 s notes), one short board run, then live humming by the user. Awaiting approval.
-6. **The branch `yujie/reference-worker`:** merge into `yujie/singalong-chip`, push, or leave as it is. Not decided.
-   It was built on 2026-10-09 with the user's approval of the plan; nothing from it is on the board or pushed.
+6. **The simulated chip (`yujie/reference-worker`):** built on 2026-10-09 with the user's approval of the plan and
+   merged locally into this branch at the user's request. Its push is not decided. Nothing from it ran on the board.
 
 Decided by the user on 2026-10-08 and 09, do not reopen without asking:
 
@@ -245,9 +247,9 @@ Decided by the user on 2026-10-08 and 09, do not reopen without asking:
 
 **Software tests** (no board), from `yujie/chip` with `python`:
 `test_windowing.py`, `test_transport_events.py`, `test_worker_failure.py`, `test_shutdown.py`,
-`test_slow_round_trips.py`, `test_live_view.py`, `test_reference_worker.py` (branch `yujie/reference-worker` only);
-in the container: `docker exec -w /workspace/yujie/chip singalong_sdk python3 test_board_lock.py`. Together 44 tests
-on `yujie/singalong-chip`, 63 on `yujie/reference-worker` (all passed on 2026-10-09, board idle).
+`test_slow_round_trips.py`, `test_live_view.py`, `test_reference_worker.py`; in the container:
+`docker exec -w /workspace/yujie/chip singalong_sdk python3 test_board_lock.py`. Together 63 tests (the pitch version,
+tag `pitch-2026-10-09`, has 44 of them); all 63 passed on 2026-10-09 with the board idle.
 
 **The page without the board, the microphone or sound** (from `agent-pitch-handoff`, then open
 http://127.0.0.1:8765):
@@ -306,7 +308,7 @@ docker exec -w /workspace/jan/singalong singalong_sdk python3 -u /workspace/yuji
 | `check_persistent.py`, `check_banner.py`, `board_check.py` | board checks |
 | `fake_worker.py`, `test_*.py` | software tests |
 | `README.md` | entry point: reading order, commands, file map, branches, commit style (written 2026-10-09) |
-| `reference_worker.py`, `test_reference_worker.py`, `results/reference_worker/` | the simulated chip for `--mode reference`, its tests, and the 45 note lines the board printed (branch `yujie/reference-worker`) |
+| `reference_worker.py`, `test_reference_worker.py`, `results/reference_worker/` | the simulated chip for `--mode reference`, its tests, and the 45 note lines the board printed |
 | `PITCH_DAY.md` | the checklist for the pitch day (written 2026-10-09) |
 | `BOARDLESS.md` | how to keep improving without the board; the one missing piece (written 2026-10-09) |
 | `snn.environment.yml` | the host Python environment `snn`, exported 2026-10-09 |
