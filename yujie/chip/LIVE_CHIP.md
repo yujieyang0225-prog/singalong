@@ -57,26 +57,57 @@ CoreAudio provides the requested 16 kHz input; unsupported input settings fail b
 | Option | Meaning | Default |
 | --- | --- | --- |
 | `--source mic[:N]`, `mic:<name>`, `wav:<file>` | microphone by number or by its name (or a unique part of it), or a recording played at real speed | required |
-| `--mode chip`, `baseline` | network on the board, or the laptop's own pitch estimate | `chip` |
-| `--model NAME` | chip: imported model `data/runs/NAME_talamo` | `A_vocalset_P` |
-| `--banner` | chip: the application that shows a fixed text on the board's display | off |
+| `--mode chip`, `baseline`, `reference` | network on the board; the laptop's own pitch estimate (no network); or a simulated chip, the same network answered in software on this Mac, no board ("Simulated chip" below) | `chip` |
+| `--model NAME` | chip: imported model `data/runs/NAME_talamo`. Reference: the weights `handoff/runs/NAME/weights_int8.npz` | `A_vocalset_P` |
+| `--banner` | chip: the application that shows a fixed text on the board's display. Refused in reference mode | off |
 | `--selector pitch` | play the sung note itself | |
 | `--selector score`, `key`, `song` | the team's chord selectors; `score` follows Amazing Grace | `score` |
 | `--sink synth[:N]` | built-in synth on output device N | |
 | `--sink print`, `wav:<file>` | no sound; note log only, or an offline rendering to a file | `print` |
 | `--sink midi:<port>`, `fluidsynth:<sf2>` | an existing MIDI port, or FluidSynth (not installed on this Mac) | |
-| `--playout-delay S` | seconds from the end of an audio frame to its note. Chip: at least period + 0.4. Baseline: at least 0.05 | 1.0 |
-| `--period S` | chip: seconds between windows, 0.5 to 1 | 0.5 |
+| `--playout-delay S` | seconds from the end of an audio frame to its note. Chip and reference: at least period + 0.4. Baseline: at least 0.05 | 1.0 |
+| `--period S` | chip and reference: seconds between windows, 0.5 to 1 | 0.5 |
 | `--release S` | seconds without voice before the sound stops | pitch 0.4; chord selectors off |
 | `--smooth N` | pitch: frames averaged before deciding | 12 |
 | `--worker-debug` | chip: SDK communication logging. Every long run that passed had it on | off |
-| `--verify-reference` | chip: compare every window with the integer reference and stop on a difference | off |
+| `--verify-reference` | chip: compare every window with the integer reference and stop on a difference. Refused in reference mode | off |
 | `--window-timeout S` | chip: seconds to wait for one window before stopping with an error | 3 |
 | `--slow-limit N` | chip: round trips in a row longer than the period before the run stops with an error. The demo uses 6 | 3 |
 | `--start-attempts N` | chip: board starts tried when the start-up handshake fails | 3 |
+| `--sim-latency S` | reference: seconds a window takes before its answer returns; 0 answers at once | 0.38 |
 | `--checkpoint S` | seconds between partial metrics files; 0 turns them off | 10 |
 | `--duration S`, `--metrics <file>` | stop after S seconds; where the metrics go | `data/live_chip/latest.json` |
 | `--view-port N`, `--open-browser` | `live_view.py` only: port of the page, open it in the browser | 8765, off |
+
+## Simulated chip (`--mode reference`)
+
+The same loop, network, tracker and page, with no board. Each window goes to `reference_worker.py`, a local
+process that answers with the integer reference of the network under the chip's rules (`chipref.CHIP`). That
+reference matched the physical chip on every window that was compared. The network does the work here, not the
+laptop's pitch estimate, so any model in `handoff/runs/` can be tried live.
+
+```bash
+python -u yujie/chip/live_view.py --source "mic:MacBook Pro Microphone" \
+  --mode reference --model A_vsP_chip_shift3 --selector pitch --playout-delay 1.25 --sink synth
+# silent, on a recording, console only:
+python -u yujie/chip/live_chip.py --source wav:data/live_chip/tones.wav \
+  --mode reference --model A_vsP_chip_shift3 --selector pitch --playout-delay 1.25 --sink print --duration 20
+```
+
+- **What it reproduces (checked, no board, 2026-10-09):** on the Happy Birthday recording the 45 note lines are
+  identical to the ones the physical chip printed on 2026-10-08, and the older model does not give them
+  (`results/reference_worker/happy_birthday_board_notes.txt`, `test_reference_worker.py`). Two 3-minute runs on
+  `tones.wav`: 356 windows each, no late frame, no slow round trip, identical notes.
+- **What it does not tell:** the round trip is a wait of `--sim-latency` seconds (0.38, the board's median, which
+  came from the board and was not measured here), so timing, late frames, the start-up handshake and RAM use say
+  nothing about the chip. Do not quote them as chip numbers.
+- **It says so:** the page shows "SIMULATED CHIP · no board" and never "Pulsar C1"; the metrics hold
+  `simulated: true` and `mode: reference-simulation`; `exact_reference` is null in every window, because nothing was
+  compared.
+- `--banner` and `--verify-reference` are refused; `--worker-debug`, `--start-attempts` and `--container` have no
+  effect. Window rules, stop rules and the 3 s window timeout are the chip's.
+- The loop's error messages are shared with chip mode, so a failure here can still read "Board timeout" or
+  "Board worker exited". Not yet tried: the microphone in this mode.
 
 `--sink midi:GarageBand` needs GarageBand running with a software-instrument track selected. GarageBand
 ignores the program change the sink sends, so the sound is whatever instrument that track has. Sending

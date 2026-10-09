@@ -1,13 +1,14 @@
 # Keep improving the sing-along without the board
 
-Written 2026-10-09, after the pitch. Paths are relative to `~/TUM/NeuroTUM/agent-pitch-handoff` unless they start
+Written 2026-10-09, after the pitch; section 3 updated the same evening when the simulated chip was built. Paths are relative to `~/TUM/NeuroTUM/agent-pitch-handoff` unless they start
 with `/workspace` (inside the `singalong_sdk` container). Python on the Mac means
 `python`.
 
 ## Short answer
 
 **Yes, most of the work does not need the board.** What does not: the final proof on the chip, and anything about
-timing. One piece is missing and has to be built first: running a *new network* inside the live loop (section 3).
+timing. A new network can be tried live, with the tracker, synth and page, on a simulated chip: `--mode reference`
+(section 3, built on the branch `yujie/reference-worker`).
 
 | Work | Board needed? | How |
 | --- | --- | --- |
@@ -16,7 +17,7 @@ timing. One piece is missing and has to be built first: running a *new network* 
 | Know what accuracy the chip will give | no | `eval_modes.py`, section 2 step 2 |
 | Know whether it fits and builds for the chip | no | `build_chip.py`, `build_banner.py`, section 2 steps 3 and 4 |
 | Note tracking, synth, the live page, the front-end | no | `--mode baseline`, tests, recordings |
-| Run a new *network* in the live loop | **not yet possible** | section 3, one small script to build |
+| Run a network in the live loop | no | `--mode reference`, a simulated chip (section 3) |
 | Whole test set on the chip, RAM %, round trip, drift, the start-up handshake | **yes** | section 5, once at the end |
 
 ## 1. Why a software result is a chip result
@@ -69,29 +70,43 @@ Steps 1, 3 and 4 were done for both models on 2026-10-08 (`NEXT_SESSION.md` at c
 not repeated today; that handoff says they need no board, and building "needs no board" is also stated in the
 docstring of `build_chip.py`.
 
-## 3. The missing piece: a network in the live loop without the board
+## 3. A network in the live loop without the board: `--mode reference`
 
-The loop has two modes (`live_chip.py --mode`): `chip` talks to `board_worker.py` in the container, `baseline` uses
-the laptop's own pitch estimate and **no network at all**. `fake_worker.py` only answers with silence, for the failure
-tests. So today a new network can be scored (step 2) but cannot be *played* through the tracker, the synth and the
-page without a board.
+`live_chip.py` and `live_view.py` have three modes: `chip` (the board, through `board_worker.py` in the container),
+`baseline` (the laptop's own pitch estimate, **no network**) and, since 2026-10-09, `reference`: a simulated chip.
+The window goes to `reference_worker.py`, a local process on the same JSON-lines protocol as the board worker, which
+answers with `chipref.run(npz, x, **chipref.CHIP)`. Everything else in the loop is the chip path: windows, stop
+rules, tracker, synth, page. Options and limits: `LIVE_CHIP.md`, "Simulated chip".
 
-**Proposal, not built (awaiting approval, as the working rules require):** `reference_worker.py`, a drop-in for
-`board_worker.py` on the same JSON-lines protocol: it answers `hello` and `ready`, takes a request
-`{id, features}` with `features` of shape 125 x 48, and returns `{type: result, id, spikes}` with `spikes` of shape
-125 x 24, computed by `chipref.run(npz, x, **chipref.CHIP)`. `board_worker.py` already imports `chipref` and uses it for
-`--verify-reference`, so the computation exists. It would run on the Mac, so no container is needed.
+```bash
+python -u yujie/chip/live_view.py --source "mic:MacBook Pro Microphone" --mode reference --model <NAME> \
+    --selector pitch --playout-delay 1.25 --sink synth
+```
 
-Proposed acceptance criteria:
+`<NAME>` is a folder under `handoff/runs/` with `weights_int8.npz`: put a new model there and it plays. It needs no
+import and no build.
 
-1. For the test windows, its spikes are identical to the reference spikes `board_worker.py --verify-reference` compares
-   against (0 differences).
-2. The six test files and the container test still pass; a new test covers the worker.
-3. Without the new option, `live_chip.py` and `live_view.py` behave exactly as before; the default stays.
-4. It reports a configurable fake round-trip time and says in the page and the metrics that the chip is *simulated*,
-   so nobody quotes its timing as a measurement.
+**Acceptance criteria and what was measured (2026-10-09, no board, branch `yujie/reference-worker`):**
 
-With it, everything in section 4 that concerns the network can be tried live, with the microphone, with no board.
+| # | Criterion | Result |
+| --- | --- | --- |
+| 1 | Worker spikes equal the reference | 0 differences on 256 windows (216 real voiced DAMP windows and 40 random ones) for both models. A worker with the training rules fails this test |
+| 2 | Same notes as the physical chip | The 45 note lines of the board log of the Happy Birthday recording match with `A_vsP_chip_shift3`, 0 differences; the older `A_vocalset_P` prints 42 lines that differ, so the comparison can fail |
+| 3 | The chip path is untouched | All 44 earlier tests pass; `board_worker.py`, `fake_worker.py`, `ChipClient` and the chip-mode error texts are byte-identical; `--mode baseline` on `tones.wav` still prints the documented notes |
+| 4 | It says it is simulated | Page tag "SIMULATED CHIP · no board" (read in the built-in browser; "Pulsar C1" appears nowhere); metrics `simulated: true`; `exact_reference` null in every window |
+| 5 | Timing | Median round trip 0.394 s at the default, under 50 ms with `--sim-latency 0`; 0 slow round trips |
+| 6 | Failures | A worker that dies gives "Board worker exited"; one slower than the window timeout gives "Board timeout"; neither leaves a process; end of input, a close request and SIGTERM stop the worker quietly |
+| 7 | No Docker | The run succeeds with a `docker` on `PATH` that fails loudly and is never called; the same driver in chip mode does call it |
+| 8 | Stability | Two 3-minute runs: 356 windows each, 0 late frames, 0 slow round trips, 0 errors, identical output (91 note lines) |
+
+**Limits, said plainly:** the round trip is a configured wait (default 0.38 s, the board's median, not measured
+here), so timing, late frames and the start-up handshake of a reference run mean nothing for the chip. The
+microphone has not been tried in this mode. The match with the board rests on the reference having matched the chip on
+every window compared (section 1) and on the one recording above.
+
+**What this makes possible:** every item of section 4 that concerns the network can be tried live, with the microphone,
+without the board. A chip run and a reference run differ only in the worker, which also turns the drift question
+(issue 11) into a clean comparison.
 
 ## 4. Work that needs no board, from the open points
 
@@ -100,8 +115,8 @@ From `NEXT_SESSION.md`; none of it has been started.
 | Idea | Why no board | First check |
 | --- | --- | --- |
 | Sustained monophonic synth / steadier notes (`NEXT_SESSION.md` section 6, item 5; the feasibility report estimated 150 to 250 ms extra delay on note changes) | The tracker and synth run on the laptop | host-only note-sequence tests, then the known 2 s tones |
-| Measure live note tracking (issue 2: median note lasted 0.30 to 0.34 s) | Needs recordings and a scorer, not the chip | recordings through the reference worker of section 3 |
-| Is the microphone timestamp drift (issue 11) caused by the board? | `--mode baseline` with the microphone has no board | one 20-minute baseline run with the microphone; compare with the 20-minute chip run (about 0.03 s of drift per minute). **Untested idea** |
+| Measure live note tracking (issue 2: median note lasted 0.30 to 0.34 s) | Needs recordings and a scorer, not the chip | recordings through `--mode reference` (section 3) |
+| Is the microphone timestamp drift (issue 11) caused by the board? | `--mode reference` with the microphone has no board and is otherwise the chip loop | one 20-minute reference run with the microphone and the same options as the 20-minute chip run (about 0.03 s of drift per minute). **Untested idea** |
 | Page readability (issue 13) | Browser and projector only | open `live_view.py` on tones in Safari on the projector |
 | Next training session | Cluster | `TRAINING_FEEDBACK.md`, section 4 and 7 |
 
