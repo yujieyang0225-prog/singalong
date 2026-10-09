@@ -226,6 +226,14 @@ class StateTests(unittest.TestCase):
         view.args = SimpleNamespace(mode='chip', model=None)          # --model left out: the loop's default
         self.assertEqual(view.snapshot()['model'], live_view.live_chip.DEFAULT_MODEL)
 
+    def test_model_is_also_named_in_reference_mode(self):
+        view = running_view()
+        view.args = SimpleNamespace(mode='reference', model='A_vsP_chip_shift3')
+        state = view.snapshot()
+        self.assertEqual((state['mode'], state['model']), ('reference', 'A_vsP_chip_shift3'))
+        view.args = SimpleNamespace(mode='reference', model=None)
+        self.assertEqual(view.snapshot()['model'], live_view.live_chip.DEFAULT_MODEL)
+
     def test_1_7_snapshot_is_quick_and_small_with_full_histories(self):
         """The largest /state there can be: both histories full and all of it inside the 15 s window, in a
         chip run that has lasted ten minutes (60 round trips in the list, 8 events)."""
@@ -274,6 +282,17 @@ class PageTests(unittest.TestCase):
         for text in ('Running on the chip', 'Starting the board', 'No chip result for', 'Stopped with an error',
                      "'Stopped'", 'Not connected'):
             self.assertIn(text, live_view.PAGE)
+
+    def test_the_simulated_chip_is_labelled_as_simulated(self):
+        """--mode reference runs the network in software. The page must say so wherever it names the chip."""
+        for text in ('SIMULATED CHIP · no board', 'Running on the simulated chip (no board)', 'Starting the simulated chip',
+                     'No simulated result for', 'What the simulated chip hears', 'Raw SNN output (simulated)',
+                     "' · simulated'", 'id="f-rtlabel"', "'simulated':'chip'", '.tag.sim'):
+            self.assertIn(text, live_view.PAGE)
+        # the simulated case is decided before the chip case, in every line that has both
+        self.assertIn("tag('mode',sim?'sim':chip?'chip':'laptop',sim?'SIMULATED CHIP · no board':chip?'CHIP · Pulsar C1':'LAPTOP ONLY')",
+                      live_view.PAGE)
+        self.assertIn("const sim=s.mode==='reference', chip=s.mode==='chip'||sim,", live_view.PAGE)
 
     def test_2_5_words_the_demo_must_not_claim(self):
         for word in ('velocity', 'pitch bend', 'pitchbend', 'legato'):

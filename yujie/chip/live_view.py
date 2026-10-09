@@ -4,7 +4,7 @@
 Takes the same options as live_chip.py and serves one local page, in the look of the team's
 slide deck, that shows while the loop runs: the microphone level, the tracked note and what the
 tracker is doing, the twelve pitch-class values, a piano roll of the notes played in the last
-15 seconds with the raw output under it, the active mode (chip or laptop only) and, in a footer,
+15 seconds with the raw output under it, the active mode (chip, simulated chip or laptop only) and, in a footer,
 the round trip, the delay from voice to note and the error counts. It only observes: the sink,
 the selector and the loop are the existing ones and get the same calls as before.
 
@@ -141,7 +141,7 @@ class View:
         return dict(
             phase=phase, error=error, elapsed=round(now, 1),
             mode=mode, source=getattr(self.args, 'source', None),
-            model=(getattr(self.args, 'model', None) or live_chip.DEFAULT_MODEL) if mode == 'chip' else None,
+            model=(getattr(self.args, 'model', None) or live_chip.DEFAULT_MODEL) if mode in ('chip', 'reference') else None,
             sink=getattr(self.args, 'sink', None), port=self.port,
             audio_seconds=round(run.total / live_chip.fe.FPS, 1) if run else 0,
             mic=dict(db=round(self.mic_db, 1), voiced=self.voiced),
@@ -297,6 +297,7 @@ h1{margin:.2rem 0 0;font-weight:400;font-size:2.5rem;line-height:1;color:var(--i
   line-height:1.2;white-space:nowrap}
 .tag.chip{background:var(--hears);color:#fff}
 .tag.laptop,.tag.off{border-color:var(--muted);color:var(--muted)}
+.tag.sim{border:1px dashed var(--hears);color:var(--hears)}   /* the network runs, but in software: no board */
 .tag.ok{background:var(--ink);color:#fff}
 .tag.wait{border-color:var(--ink);color:var(--ink)}
 .tag.bad{background:var(--accent);color:#fff}
@@ -385,7 +386,7 @@ footer b.bad{color:var(--accent)}
 </main>
 <footer>
   <span id="f-model">–</span><span id="f-octave">octave chosen on the laptop</span>
-  <span>chip round trip <b id="f-rt">–</b></span>
+  <span><span id="f-rtlabel">chip</span> round trip <b id="f-rt">–</b></span>
   <span>voice to note <b id="f-lat">–</b></span><span>late frames <b id="f-late">–</b></span>
   <span>skipped updates <b id="f-skipped">–</b></span><span>slow round trips <b id="f-slow">–</b></span>
   <span>connection errors <b id="f-conn">–</b></span>
@@ -458,18 +459,18 @@ function figure(id,text,bad){const e=$(id);e.textContent=text;e.className=bad?'b
 function render(s){
   if(s.elapsed<clock)shown=null;                                     // the loop's clock went back: a new run, which starts with an empty roll
   clock=s.elapsed;
-  const chip=s.mode==='chip', live=s.phase==='running';             // only a running loop has live data to show
+  const sim=s.mode==='reference', chip=s.mode==='chip'||sim, live=s.phase==='running';   // sim: the network in software, no board; only a running loop has live data to show
   document.body.className=(chip?'chip':'laptop')+(live?'':' idle');
-  if(s.mode)tag('mode',chip?'chip':'laptop',chip?'CHIP · Pulsar C1':'LAPTOP ONLY');
+  if(s.mode)tag('mode',sim?'sim':chip?'chip':'laptop',sim?'SIMULATED CHIP · no board':chip?'CHIP · Pulsar C1':'LAPTOP ONLY');
   $('banner').style.display=s.error?'flex':'none';
   $('bannertext').textContent=s.error||'';
   if(s.phase==='lost')tag('status','bad','Not connected: the pipeline is not running');
   else if(s.phase==='error')tag('status','bad','Stopped with an error');
   else if(s.phase==='stopped')tag('status','off','Stopped');
-  else if(s.phase==='starting')tag('status','wait',chip?'Starting the board (about 20 s)':'Starting');
-  else if(chip&&s.snn.age!==null&&s.snn.age>2)tag('status','wait','No chip result for '+s.snn.age.toFixed(1)+' s');
+  else if(s.phase==='starting')tag('status','wait',sim?'Starting the simulated chip':chip?'Starting the board (about 20 s)':'Starting');
+  else if(chip&&s.snn.age!==null&&s.snn.age>2)tag('status','wait',(sim?'No simulated result for ':'No chip result for ')+s.snn.age.toFixed(1)+' s');
   else if(chip&&!s.snn.windows)tag('status','wait','Waiting for the first 2 s of audio');
-  else tag('status','ok',chip?'Running on the chip':'Running on the laptop');
+  else tag('status','ok',sim?'Running on the simulated chip (no board)':chip?'Running on the chip':'Running on the laptop');
   tag('rollstate',$('status').classList.contains('bad')?'bad':'wait',$('status').textContent);   // shown over the faded roll
   const f=s.follower, m=s.midi, l=s.latency, ev=live?s.evidence:s.evidence.map(()=>0), top=Math.max(...ev), topi=ev.indexOf(top);
   const tracked=live?f.tracked:null;                                 // a stopped tracker keeps its last note: do not show it
@@ -487,21 +488,22 @@ function render(s){
       note:'Note held '+(d.held||0).toFixed(1)+' s',silence:'Silence'}[d.state];
     $('decmeter').style.visibility=live&&d.progress!==null?'visible':'hidden';
     $('decbar').style.width=((d.progress||0)*100)+'%';}
-  $('evtitle').textContent=chip?'What the chip hears':'What the laptop hears (no chip)';
+  $('evtitle').textContent=sim?'What the simulated chip hears':chip?'What the chip hears':'What the laptop hears (no chip)';
   $('evcaption').textContent=chip?'spike rate per pitch class, last 8 frames':'pitch estimate per pitch class';
-  $('rawtitle').textContent=chip?'Raw SNN output':'Raw laptop estimate (no chip)';
+  $('rawtitle').textContent=sim?'Raw SNN output (simulated)':chip?'Raw SNN output':'Raw laptop estimate (no chip)';
   $('rawlabel').textContent='strongest pitch class per frame · C at the bottom, B at the top';
   const scale=Math.max(1,top);
   [...bars.children].forEach((d,i)=>{const v=ev[i]/scale;d.lastChild.style.height=(v*100)+'%';
     d.title=NAMES[i]+': '+ev[i].toFixed(2);d.firstChild.textContent=(top>0&&i===topi)?ev[i].toFixed(2):'';
     d.firstChild.style.bottom='calc('+(v*100)+'% + .2rem)';labels.children[i].className=(top>0&&i===topi)?'top':'';});
-  $('f-model').textContent=chip?(s.model||'–')+' · 104 spiking neurons':'laptop pitch estimate, no chip';
+  $('f-model').textContent=chip?(s.model||'–')+' · 104 spiking neurons'+(sim?' · simulated':''):'laptop pitch estimate, no chip';
   $('f-octave').style.display=f.tracking?'':'none';
   const heard=live&&s.audio_seconds>0, db=Math.max(-70,Math.min(0,s.mic.db));
   $('micdb').textContent=heard?db.toFixed(0).replace('-','−')+' dB':'–';
   $('micbar').style.width=heard?((db+70)/70*100)+'%':'0';
   $('micsub').textContent=heard?(s.mic.voiced?'Voice detected':'Silence'):(live?'No audio yet':'Not listening');
   $('micsub').className=heard&&s.mic.voiced?'on':'';
+  $('f-rtlabel').textContent=sim?'simulated':'chip';
   $('f-rt').textContent=chip?(s.snn.roundtrip?Math.round(s.snn.roundtrip*1000)+' ms':'–'):'n/a';
   $('f-lat').textContent=l.median?l.median.toFixed(2)+' s':'–';
   figure('f-late',l.late,l.late>0.02*l.delivered);
