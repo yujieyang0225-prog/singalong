@@ -5,9 +5,19 @@ Team project from the **NeuroTUM Hackathon 2026** (Innatera × Sofilab challenge
 A person sings or hums a note. A small recurrent spiking neural network (SNN) running on the Innatera Pulsar C1
 finds the pitch class, the laptop picks the octave, and a synthesizer plays the note back in real time.
 
-> **TODO (Yujie):** one or two sentences on what you built yourself, for example: "I built the live loop that runs the
-> network on the physical chip, the board tooling, a simulated chip for working without the board, and the tests
-> (`yujie/chip/`)." Add a link to a demo video or photo here if you have one.
+## My part (Yujie Yang)
+
+I took the team's trained network from the laptop to the physical chip and made it run live:
+
+- Found and fixed why the trained weights no longer matched after import into Innatera's toolchain.
+- Built the chip applications, including a C kernel that writes to the board's display.
+- Wrote the live loop: microphone -> chip -> note tracking -> synthesizer, with a live web page and a piano roll.
+- Traced a crash after 338 windows to event handles leaked by the SDK (3 per call, until the 1,024 limit of
+  `select()`) and fixed it in our code: 1,451 of 1,451 windows then ran on one boot.
+- After the pitch, built a simulated chip that reproduces the board's output, so the system can be developed without
+  the hardware.
+
+About 3,900 lines of Python and C and 63 tests, in [`yujie/chip/`](yujie/chip/README.md).
 
 ## How it works
 
@@ -40,8 +50,6 @@ Model: `A_vsP_chip_shift3` (`handoff/runs/`). Details and how each number was me
 | [`yujie/`](yujie/chip/README.md) | Yujie Yang | Live loop on the physical chip (`live_view.py`, `live_chip.py`), board worker and tooling, chip applications including a C kernel that writes to the board's display, the simulated chip (`--mode reference`), software tests, documentation |
 | [`jan/`](jan/singalong/README.md) | Jan Vitzthum | Audio front-end (48 semitone bands, also as a C kernel), the SNN model and its training (PyTorch and Innatera's Talamo), the first laptop demo |
 | [`simon/`](simon/), [`handoff/`](handoff/README.md) | Simon Appoltshauser | Dataset preparation, training runs and hyper-parameter search on the cluster, evaluation, the trained models |
-
-> **TODO (Yujie):** check these descriptions with Jan and Simon, and add any other team members.
 
 The full commit history is kept: `git shortlog -sn` shows who committed what.
 
@@ -97,5 +105,5 @@ exist only in the team's repository. The tag `pitch-2026-10-09` marks the versio
 
 ## Licence
 
-> **TODO (Yujie):** no licence is granted yet, so all rights stay with the authors (the code can be read, not reused).
-> To allow reuse, choose a licence (for example MIT) together with Jan and Simon, and add it as `LICENSE`.
+No licence is granted: all rights reserved by the authors. The code is published to be read; copying or reusing it
+needs the authors' permission.
