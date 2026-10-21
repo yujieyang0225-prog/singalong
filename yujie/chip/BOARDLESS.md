@@ -66,7 +66,7 @@ the file away first and put it back afterwards, or the repository shows a change
 - The laptop-only loop with the live page on `data/live_chip/tones.wav` (command in `NEXT_SESSION.md`, section 7):
   the console showed the notes 60, 64, 67, 69, 67, 64, 62, 60, 64 and the program stopped by itself.
 
-Steps 1, 3 and 4 were done for both models on 2026-10-08 (`NEXT_SESSION.md` at commit `50ea178`, section 4) and were
+Steps 1, 3 and 4 were done for both models on 2026-10-08 (`NEXT_SESSION.md` at commit `18d163b`, section 4) and were
 not repeated today; that handoff says they need no board, and building "needs no board" is also stated in the
 docstring of `build_chip.py`.
 
@@ -86,7 +86,7 @@ python -u yujie/chip/live_view.py --source "mic:MacBook Pro Microphone" --mode r
 `<NAME>` is a folder under `handoff/runs/` with `weights_int8.npz`: put a new model there and it plays. It needs no
 import and no build.
 
-**Acceptance criteria and what was measured (2026-10-09, no board; commits `72344f4` to `f1bd49f`):**
+**Acceptance criteria and what was measured (2026-10-09, no board; commits `3808946` to `f0c5931`):**
 
 | # | Criterion | Result |
 | --- | --- | --- |
@@ -159,5 +159,5 @@ docker run -d --name singalong_sdk --group-add innatera \
 docker exec singalong_sdk pip install --user -q seaborn "torchsummary==1.5.1" "pyzenodo3==1.0.2" pretty_midi pytest mido
 ```
 
-(From `50ea178:yujie/chip/NEXT_SESSION.md`, section 4, where it also was; unchanged. The container keeps running
+(From `18d163b:yujie/chip/NEXT_SESSION.md`, section 4, where it also was; unchanged. The container keeps running
 after the pitch; stopping it with `docker stop singalong_sdk` frees memory and loses nothing on disk.)

@@ -1,110 +1,101 @@
-# MNH26SVR
-Neuromorphic singing voice recognition
+# Sing-along on a neuromorphic chip (Innatera Pulsar C1)
 
-NeuroTUM Hackathon 2026, Innatera × Sofilab challenge. **Goal:** you sing any song, in any key, at any tempo, and a small recurrent spiking neural network on the Innatera Pulsar chip plays a fitting violin accompaniment in real time.
+Team project from the **NeuroTUM Hackathon 2026** (Innatera × Sofilab challenge), pitched on 9 October 2026.
 
-## Layout
+A person sings or hums a note. A small recurrent spiking neural network (SNN) running on the Innatera Pulsar C1
+finds the pitch class, the laptop picks the octave, and a synthesizer plays the note back in real time.
+
+> **TODO (Yujie):** one or two sentences on what you built yourself, for example: "I built the live loop that runs the
+> network on the physical chip, the board tooling, a simulated chip for working without the board, and the tests
+> (`yujie/chip/`)." Add a link to a demo video or photo here if you have one.
+
+## How it works
+
 ```
-MNH26SVR/
-├── README.md          ← you are here
-├── scripts/           ← helper scripts (paper downloader, …); code goes in the repo root
-├── jan/               ← Jan's code: scripts/ (analysis & experiments), prep/ (data prep),
-│                        singalong/ (the demo: GPU trainer, laptop host app, HMM selector, violin renderer,
-│                        C front-end kernel, Talamo scripts; README.md there is the runbook),
-│                        train/ (run visualiser) — see Hackathon/07 Experiments/2026-10-07 Chord SNN training.md
-└── Hackathon/         ← the team Obsidian vault (all notes, decisions, research, songs)
+microphone -> front-end on the laptop (48 semitone bands, one frame per 16 ms)
+  -> latest 2 s window every 0.5 s -> board worker -> Pulsar C1
+     (IF encoder + recurrent SNN 48 -> 80 -> 24, RAM boot, fixed text on the board's display)
+  -> spikes of outputs 12..23 -> rate over 8 frames -> pitch tracker on the laptop
+     (pitch class from the chip, octave from the 48 bands) -> one-voice renderer
+  -> synthesizer and a live page with a piano roll (http://127.0.0.1:8765)
 ```
 
-## Quick start (new teammate)
-1. **Get access** to `nc-fortiss/MNH26SVR` (ask Jan) and add your SSH key to GitHub.
-2. **Clone:**
-   ```bash
-   git clone git@github.com:nc-fortiss/MNH26SVR.git
-   cd MNH26SVR
-   git config user.name "Firstname Lastname"     # your commits are your signature
-   git config user.email "you@example.com"
-   python3 scripts/download_papers.py            # fetch the reference PDFs (not in git)
-   ```
-3. **Open the vault:** install [Obsidian](https://obsidian.md), choose **Open folder as vault**, and select `MNH26SVR/Hackathon`. When asked, click **Trust author and enable plugins**. This turns on *Obsidian Git* (auto-sync, see below).
-4. **Introduce yourself:** create your note in `03 Team/` from the *Person* template (see [Templates](#templates)). Pick a handle such as `@anna` and add yourself to the table in `03 Team/README.md`.
-5. **Read in this order:** `Home.md` → `01 Project/Overview.md` → `02 Ideas/SNN Violin Accompaniment.md` → `09 Decisions/Decisions.md`.
+## Results, measured on the board
 
-## How the vault is organised
-| Folder | What goes there |
-|---|---|
-| `Home.md` | Start page: current status and links to everything |
-| `00 Inbox/` | Quick unsorted captures; sort them later |
-| `01 Project/` | `Overview.md`: challenge, rules, deadlines, **decisions log** |
-| `02 Ideas/` | One note per idea. Main idea: `SNN Violin Accompaniment` |
-| `03 Team/` | One note per person, plus the handle table |
-| `04 Meetings/` | `YYYY-MM-DD Topic.md`: notes, decisions, action items |
-| `05 Tasks/` | `Tasks.md`: the single shared task list |
-| `06 Research/` | Hardware/SDK notes, `Lit - …` literature surveys, `Paper - …` summaries, `Papers.md` (paper library) |
-| `07 Experiments/` | `YYYY-MM-DD Name.md`: one note per experiment (setup, results, commit) |
-| `08 Songs/` | The challenge song set (audio, MIDI, scores). **Read-only reference data; check licences** |
-| `09 Decisions/` | **One page per design decision** (`D01 …`–`D14 …`) plus the `Decisions.md` index |
-| `Templates/` | Note templates: Decision, Experiment, Meeting, Idea, Person |
-| `99 Archive/` | Dropped or finished material. **Move here, never delete** |
-| `Attachments/` | Images, plots, PDFs. `Attachments/Papers/` is local only (not in git) |
+| What | Result |
+| --- | --- |
+| Test windows identical to the integer reference | 1,451 of 1,451 (plain application and with the display text) |
+| Pitch-class accuracy: VocalSet songs / VocalSet exercises / DAMP | 0.577 / 0.591 / 0.378 (chance is about 0.08) |
+| Chip RAM used | 23.23 % (25.59 % with the display text) |
+| Round trip per 2 s window | about 0.38 s (median) |
 
-## Working rules
-Full version: `09 Decisions/D00 Collaboration conventions.md`.
+Model: `A_vsP_chip_shift3` (`handoff/runs/`). Details and how each number was measured:
+[`yujie/chip/NEXT_SESSION.md`](yujie/chip/NEXT_SESSION.md) and
+[`yujie/chip/HARDWARE_BENCHMARK.md`](yujie/chip/HARDWARE_BENCHMARK.md).
 
-- **Sign your work.**
-  - Every new note gets `author: "[[Firstname Lastname]]"` in its frontmatter (the templates already include it).
-  - Comment in someone else's note by appending a signed line: `- @anna 2026-10-06: I think …`. **Never rewrite someone else's text.**
-- **One thing per note.** Each idea, paper, experiment or decision gets its own note, connected to the others with `[[wikilinks]]`.
-- **Decisions:**
-  - Every open design question has a page in `09 Decisions/`. Status goes 🟡 `proposed` → 🟢 `accepted` / 🔴 `rejected` → ⚪ `superseded`.
-  - To weigh in, add a signed comment under *Discussion*.
-  - The **owner** accepts a decision by filling in the *Decision* section (what, who, when, link to the meeting or experiment). The owner then updates the table in `Decisions.md` and the log in `Overview.md`.
-  - New decision: use the *Decision* template, give it the next free number, and add a row to `Decisions.md`.
-- **Tasks:** go in `05 Tasks/Tasks.md` as `- [ ] what — @handle 📅 YYYY-MM-DD`, with a link to the note it comes from. Tick them off with `[x]`.
-- **Experiments:** use the *Experiment* template, link the decision it informs, and record the code commit (`git rev-parse --short HEAD`). Then add the result to the decision page.
-- **Uncertain facts:** mark them with a `> [!question]` callout instead of guessing.
-- **New notes:** link them from `Home.md` so others can find them.
+## Who did what
 
-## Templates
-Settings → Core plugins → **Templates** is already set to the `Templates/` folder.
+| Folder | Author | What |
+| --- | --- | --- |
+| [`yujie/`](yujie/chip/README.md) | Yujie Yang | Live loop on the physical chip (`live_view.py`, `live_chip.py`), board worker and tooling, chip applications including a C kernel that writes to the board's display, the simulated chip (`--mode reference`), software tests, documentation |
+| [`jan/`](jan/singalong/README.md) | Jan Vitzthum | Audio front-end (48 semitone bands, also as a C kernel), the SNN model and its training (PyTorch and Innatera's Talamo), the first laptop demo |
+| [`simon/`](simon/), [`handoff/`](handoff/README.md) | Simon Appoltshauser | Dataset preparation, training runs and hyper-parameter search on the cluster, evaluation, the trained models |
 
-To make a note from a template:
-1. Create the note (`Ctrl/Cmd + N`) and give it a title.
-2. Open the command palette (`Ctrl/Cmd + P`), run **Templates: Insert template**, and pick one.
+> **TODO (Yujie):** check these descriptions with Jan and Simon, and add any other team members.
 
-The template fills in the date and title.
+The full commit history is kept: `git shortlog -sn` shows who committed what.
 
-## Syncing (Obsidian Git)
-The *Obsidian Git* plugin is included and preconfigured:
-- **Pulls** on startup and every 10 minutes.
-- **Commits and pushes** your changes automatically 15 minutes after you stop editing.
-- Manual sync: command palette → **Obsidian Git: Commit-and-sync** (or the git icon in the sidebar).
-- Before editing busy notes (`Tasks.md`, `Decisions.md`, `Home.md`), pull first. That avoids merge conflicts.
-- If a conflict happens: open the file, keep both versions (delete only the `<<<<<<<`, `=======` and `>>>>>>>` lines), save and sync again.
+## Run it without the board
 
-> **The plugin only syncs the vault (`Hackathon/`).** Code, `scripts/` and this README live outside it, so commit and push them yourself with the commands below.
+Tested on macOS with conda and `ffmpeg`.
 
-Without the plugin, or for code, use the terminal:
 ```bash
-git pull --rebase            # before you start
-git add -A && git commit -m "what you did" && git push
+conda env create -f yujie/chip/snn.environment.yml    # creates the environment "snn"
+conda activate snn
+mkdir -p data/live_chip
+python yujie/chip/make_test_audio.py data/live_chip/tones.wav --seconds 190
 ```
 
-## Papers
-The literature behind each decision is in the paper library:
-- **List:** `scripts/papers.tsv`, one row per paper with the decisions it informs.
-- **Index:** `Hackathon/06 Research/Papers.md`.
-- **Per decision:** each decision page ends with a "Papers" section.
+The network on a **simulated chip** (an integer reference of the chip, no board), on the generated test tones;
+open http://127.0.0.1:8765 while it runs:
 
-The PDFs are not in git (copyright). Get them with:
 ```bash
-python3 scripts/download_papers.py
+python -u yujie/chip/live_view.py --source wav:data/live_chip/tones.wav --mode reference --model A_vsP_chip_shift3 --selector pitch --playout-delay 1.25 --sink print --duration 20
 ```
-To add a paper, add a row to `papers.tsv` and run the script again. It downloads the PDF and regenerates `Papers.md` and the decision sections. **Don't edit those generated sections by hand.**
 
-## Using Claude in the vault
-`Hackathon/CLAUDE.md` holds the vault rules for AI assistants: structure, signatures, and the decision workflow. Claude (Claude Code or the Claudian plugin) reads it automatically. Notes written by Claude are signed `author: "Claude (for [[Your Name]])"`.
+The software tests, from `yujie/chip`:
 
-## Don't commit
-- **Secrets:** SDK tokens, Docker passwords, `.env` files. Share them in Discord, never in the vault. `.secrets/` and `*.token` are gitignored.
-- Large data or model files over about 50 MB: keep them on the Sofilab Nextcloud and link them instead.
-- Personal Obsidian layout (`.obsidian/workspace*.json`), which is already gitignored.
+```bash
+for t in windowing transport_events worker_failure shutdown slow_round_trips live_view reference_worker; do python test_$t.py; done
+```
+
+Two tests skip because their data is not in this repository (see below). `test_board_lock.py` runs in the SDK
+container. Running on the physical chip needs the Pulsar C1 evaluation kit and Innatera's SDK, which are not public:
+[`yujie/chip/PITCH_DAY.md`](yujie/chip/PITCH_DAY.md).
+
+## Not included, and third-party material
+
+- **Innatera's SDK (Talamo) and starter repository** are proprietary and not included. The code imports them where
+  it talks to the chip. Innatera, Pulsar and Talamo are names of Innatera Nanosystems.
+- **DAMP (Smule) recordings and features computed from them** are not included: their research licence does not allow
+  redistribution. Scores measured on them are reported. One test skips without them.
+- **Song recordings, scores and MIDI files used during the hackathon** are not included (third-party licences). One
+  test skips without the Happy Birthday recording.
+- **The team's notes and the organisers' material** are not included.
+- **VocalSet** (J. Wilkins, P. Seetharaman, A. Wahl, B. Pardo, "VocalSet: A Singing Voice Dataset", ISMIR 2018;
+  [doi:10.5281/zenodo.1193957](https://doi.org/10.5281/zenodo.1193957), CC BY 4.0): the models were trained on it,
+  and `handoff/testdata/vocalset/` holds band features computed from it.
+- The board-side C code in `yujie/chip/banner/` uses the SDK's API and follows its display example for the pin set-up.
+
+## About the documents and the history
+
+This is a public copy of the branch `yujie/singalong-chip` of the team's private repository. It keeps the commits of
+the code, the models and the documents, and leaves out the material listed above. The documents in `yujie/chip/` are
+the working notes written during the hackathon. Some refer to the team's local set-up and to branches that are not
+in this repository. Commit IDs in them point to this repository, except `f7cd2fd`, `4917b31` and `fd3e4cb`, which
+exist only in the team's repository. The tag `pitch-2026-10-09` marks the version shown at the pitch.
+
+## Licence
+
+> **TODO (Yujie):** no licence is granted yet, so all rights stay with the authors (the code can be read, not reused).
+> To allow reuse, choose a licence (for example MIT) together with Jan and Simon, and add it as `LICENSE`.

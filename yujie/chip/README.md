@@ -47,7 +47,7 @@ The page is http://127.0.0.1:8765. Tests (no board): `$PY test_<name>.py` from t
 
 | Branch | What it is |
 | --- | --- |
-| `yujie/singalong-chip` | The sing-along work. The pitch version is the tag `pitch-2026-10-09` (`151e96b`), the remote tip. After it: `abb31e2` (documentation written after the pitch) and six commits for the simulated chip (`--mode reference`), one step each: `git log --oneline abb31e2..`. All local, not pushed |
+| `yujie/singalong-chip` | The sing-along work. The pitch version is the tag `pitch-2026-10-09` (`0da3ab8`), the remote tip. After it: `90ac61a` (documentation written after the pitch) and six commits for the simulated chip (`--mode reference`), one step each: `git log --oneline 90ac61a..`. All local, not pushed |
 | `yujie/reference-worker` | The branch the simulated chip was built on; merged into `yujie/singalong-chip` (same tip), safe to delete |
 | `yujie/multi-agent`, `yujie/agent-model`, `yujie/live-mic-voice` | The approach of 7 October and the voice demo; not used by the sing-along |
 | `main`, `singalong-pitch-handoff` | The team's and Simon's. Never commit to them |

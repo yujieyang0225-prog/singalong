@@ -2,7 +2,7 @@
 
 Snapshot of 2026-10-09, 02:30, with the wrap-up of the same day (12:20) added. The pitch was on Friday 9 October,
 10:00; how it went is not recorded here.
-**The code and the demo were frozen for the pitch at commit `151e96b`; the code is unchanged since.** `PITCH_DAY.md`
+**The code and the demo were frozen for the pitch at commit `0da3ab8`; the code is unchanged since.** `PITCH_DAY.md`
 in this folder is the checklist for getting the demo up and keeping it up.
 
 **After the pitch (wrap-up, 2026-10-09):**
@@ -66,37 +66,37 @@ Also done: direct note tracking (`--selector pitch`), the built-in synth (`--sin
 
 ## 3. Branch, commits, uncommitted changes
 
-- Branch `yujie/singalong-chip`, remote `nc-fortiss/MNH26SVR`. **The remote is at `151e96b`**, pushed on
+- Branch `yujie/singalong-chip`, remote `nc-fortiss/MNH26SVR`. **The remote is at `0da3ab8`**, pushed on
   2026-10-09 at about 02:15 with the user's permission. That commit is the frozen pitch version.
-- Anything newer than `151e96b` in `git log` is documentation written after the push and may not be
+- Anything newer than `0da3ab8` in `git log` is documentation written after the push and may not be
   pushed. Check with `git log --oneline origin/yujie/singalong-chip..HEAD`. Every push needs the user's
   permission.
 
 | Commit | What it holds |
 | --- | --- |
-| `ed75474` | the `--slow-limit` option with its software tests (`live_chip.py`, `fake_worker.py`, `test_slow_round_trips.py`) |
-| `7a6791d` | documentation of it, the timestamp drift and the Bluetooth findings |
-| `beff077` | the new live page and its tests (`live_view.py`, `test_live_view.py`) |
-| `c3f026d` | documentation of the page (`LIVE_CHIP.md`, "What the page shows") |
-| `151e96b` | this file after the page work; the frozen pitch version |
+| `1f5c7ed` | the `--slow-limit` option with its software tests (`live_chip.py`, `fake_worker.py`, `test_slow_round_trips.py`) |
+| `816b446` | documentation of it, the timestamp drift and the Bluetooth findings |
+| `38416bf` | the new live page and its tests (`live_view.py`, `test_live_view.py`) |
+| `3bf0bfc` | documentation of the page (`LIVE_CHIP.md`, "What the page shows") |
+| `0da3ab8` | this file after the page work; the frozen pitch version |
 
-- **What `ed75474` changes:** `--slow-limit N` with default 3, two counters in the metrics
+- **What `1f5c7ed` changes:** `--slow-limit N` with default 3, two counters in the metrics
   (`slow_round_trips`, `longest_slow_streak`), and the error text, which now names the count
   ("3 consecutive round trips exceeded update period"). Without the option the stop rule is the old one.
-- **What `beff077` changes:** only `live_view.py`, the page and what it is given to draw. The loop, the
+- **What `38416bf` changes:** only `live_view.py`, the page and what it is given to draw. The loop, the
   tracker, the synth and everything that talks to the board are untouched. `/state` kept every earlier key
   and gained `timeline`, `raw`, `decoder`, `model` and `latency.slow`.
 - **Uncommitted on purpose:** `yujie/chip/results/live_2026-10-08/presentation_rehearsal.json`, the metrics
   of the rehearsal that stopped, and `yujie/chip/UI_REDESIGN_PLAN.md`, the plan the page was built from.
   The user keeps both local. The plan predates two later decisions (section 6), so the page differs from it.
-- **Tag:** `pitch-2026-10-09` on `151e96b`, created locally at the wrap-up so that there is one name for the pitch
+- **Tag:** `pitch-2026-10-09` on `0da3ab8`, created locally at the wrap-up so that there is one name for the pitch
   version. Not pushed (section 6).
 - **The simulated chip** (`--mode reference`) was built on the branch `yujie/reference-worker` and merged into this
   branch on 2026-10-09 as a fast-forward, locally, **not pushed**: six commits, one step each,
-  `git log --oneline abb31e2..f1bd49f`. They add `reference_worker.py`, `--mode reference` in `live_chip.py`, the
+  `git log --oneline 90ac61a..f0c5931`. They add `reference_worker.py`, `--mode reference` in `live_chip.py`, the
   "SIMULATED CHIP" wording in `live_view.py`, `test_reference_worker.py` and the board-notes fixture, and the
   documents; the chip path, `board_worker.py` and `ChipClient` are unchanged. The branch name
-  `yujie/reference-worker` still points at `f1bd49f` and can be deleted (`git branch -d yujie/reference-worker`).
+  `yujie/reference-worker` still points at `f0c5931` and can be deleted (`git branch -d yujie/reference-worker`).
 
 ## 4. The demo command and its safety settings
 
@@ -198,7 +198,7 @@ no retraining, no change to the banner application, and the working rules below.
 
 Decisions of the pitch-day list, as they stand:
 
-1. **A tag for the pitch version** (`pitch-2026-10-09` on `151e96b`): decided at the wrap-up, created **locally**. Its
+1. **A tag for the pitch version** (`pitch-2026-10-09` on `0da3ab8`): decided at the wrap-up, created **locally**. Its
    push is not decided.
 2. **The documentation written after the push** (this file, `LIVE_CHIP.md`, `PITCH_DAY.md`, `BOARDLESS.md`,
    `snn.environment.yml`): committed **locally** at the wrap-up. Its push is not decided.

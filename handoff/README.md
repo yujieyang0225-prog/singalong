@@ -106,7 +106,7 @@ sbatch --array=0 --export=ALL,TAG=_P,EXTRA="--compact --chunk 64 --lr 0.1 --wd 0
   starts at 120, neuron threshold 127, weights int8 (−128..127).
   - The encoder thresholds are trained per input band. They are the 48 integers `enc_threshold` in
     `weights_int8.npz`, not one scalar.
-- **Front-end** is `jan/singalong/singalong/frontend.py`, unchanged since commit `e129315` (2026-10-07):
+- **Front-end** is `jan/singalong/singalong/frontend.py`, unchanged since commit `d012431` (2026-10-07):
   - 16 kHz audio, 1024-sample Hann window, hop 256 (16 ms, 62.5 frames/s)
   - 48 triangular semitone bands, MIDI 40–87 (82 Hz – 1.245 kHz)
   - log2 band energy, normalised per frame over a 40 dB range

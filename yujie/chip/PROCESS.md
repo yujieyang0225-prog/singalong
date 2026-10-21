@@ -129,7 +129,7 @@ The software-only baseline path ran for 185 seconds without a problem and is one
   its last ping replies. Each one keeps an operating-system event handle open: three per window. The
   SDK's native library waits on these handles with `select()`, which only works for handle numbers below
   1,024. With about 11 handles open at rest, (1,024 − 11) / 3 ≈ 338. A parallel session added
-  `transport_events.py`, which collects the leftover replies after each window (commit `f91a1b0`).
+  `transport_events.py`, which collects the leftover replies after each window (commit `1f96bf7`).
   **Board:** the 185 s run then completed, 366 of 366 windows exact, with the number of open handles
   constant at 11. Later the same evening 1,451 windows ran on one boot.
 - **The start-up failure.** After a boot, host and board do a handshake in the native library. The

@@ -2,7 +2,7 @@
 
 Model looked at: `handoff/runs/A_vocalset_P/weights_int8.npz` (md5 `64623170…`).
 Section 7 covers its successor trained under the chip's rules, `A_vsP_chip_shift3`.
-Branch `yujie/singalong-chip`, started from `singalong-pitch-handoff` at `2a612c3`.
+Branch `yujie/singalong-chip`, started from `singalong-pitch-handoff` at `1f0455a`.
 Kept up to date as the chip work proceeds; the log at the end says what changed and when.
 
 Sections 1 to 4 were measured in **Talamo 4.7.1's software model** of the chip and in an integer

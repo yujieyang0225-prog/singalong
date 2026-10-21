@@ -31,6 +31,8 @@ WAV = os.path.join(ROOT, 'data', 'live_chip', 'tones.wav')
 HAPPY_BIRTHDAY = os.path.join(ROOT, 'Hackathon', '08 Songs', 'sources', '01_Happy_Birthday', 'audio',
                               '624721__asiilanna__happy-birthday.wav')
 BOARD_NOTES = os.path.join(HERE, 'results', 'reference_worker', 'happy_birthday_board_notes.txt')
+# DAMP band features: not in the public repository (Smule research licence, no redistribution)
+DAMP = os.path.join(ROOT, 'handoff', 'testdata', 'damp250')
 MODELS = ('A_vsP_chip_shift3', 'A_vocalset_P')                  # the validated model and the older default
 
 
@@ -41,7 +43,7 @@ def npz_of(model):
 def real_windows(per_take=9):
     """Windows [125, 48] of real band features: from each of the 24 DAMP takes the `per_take` windows with the most
     voiced frames, none overlapping (216 in all). The network's output is sparse even for singing."""
-    files = [f for f in sorted(glob.glob(os.path.join(ROOT, 'handoff', 'testdata', 'damp250', '*.npz')))
+    files = [f for f in sorted(glob.glob(os.path.join(DAMP, '*.npz')))
              if not f.endswith('reference.npz')]
     windows = []
     for path in files:
@@ -113,6 +115,7 @@ class WorkerProtocolTests(unittest.TestCase):
             self.assertEqual(w.ready['application_boots'], 0)
             self.assertEqual(w.ready['weights_md5'], hashlib.md5(pathlib.Path(npz_of(MODELS[0])).read_bytes()).hexdigest())
 
+    @unittest.skipUnless(os.path.isdir(DAMP), 'the DAMP test features are not redistributable and not in this repository')
     def test_spikes_are_the_reference_exactly_on_256_windows(self):
         real, random = real_windows(), random_windows()
         self.assertEqual((len(real), len(random)), (216, 40))
